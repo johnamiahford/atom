@@ -82,12 +82,12 @@ EditorComponent = React.createClass
     className += ' has-selection' if hasSelection
 
     div className: className, style: {fontSize, lineHeight, fontFamily}, tabIndex: -1,
-      if showLineNumbers
-        GutterComponent {
-          ref: 'gutter', onMouseDown: @onGutterMouseDown, onWidthChanged: @onGutterWidthChanged,
-          lineDecorations, defaultCharWidth, editor, renderedRowRange, maxLineNumberDigits, scrollViewHeight,
-          scrollTop, scrollHeight, lineHeightInPixels, @pendingChanges, mouseWheelScreenRow
-        }
+      # if showLineNumbers
+      #   GutterComponent {
+      #     ref: 'gutter', onMouseDown: @onGutterMouseDown, onWidthChanged: @onGutterWidthChanged,
+      #     lineDecorations, defaultCharWidth, editor, renderedRowRange, maxLineNumberDigits, scrollViewHeight,
+      #     scrollTop, scrollHeight, lineHeightInPixels, @pendingChanges, mouseWheelScreenRow
+      #   }
 
       div ref: 'scrollView', className: 'scroll-view', onMouseDown: @onMouseDown,
         InputComponent

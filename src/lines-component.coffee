@@ -18,15 +18,26 @@ LinesComponent = React.createClass
     if @isMounted()
       {editor, highlightDecorations, scrollTop, scrollLeft, scrollHeight, scrollWidth} = @props
       {lineHeightInPixels, defaultCharWidth, scrollViewHeight, scopedCharacterWidthsChangeCount} = @props
-      style =
-        height: Math.max(scrollHeight, scrollViewHeight)
-        width: scrollWidth
-        WebkitTransform: "translate3d(#{-scrollLeft}px, #{-scrollTop}px, 0px)"
 
     # The lines div must have the 'editor-colors' class so it has an opaque
     # background to avoid sub-pixel anti-aliasing problems on the GPU
-    div {className: 'lines editor-colors', style},
-      HighlightsComponent({editor, highlightDecorations, lineHeightInPixels, defaultCharWidth, scopedCharacterWidthsChangeCount})
+    div {className: 'lines'},
+      @renderLineGroups() if @isMounted()
+      # HighlightsComponent({editor, highlightDecorations, lineHeightInPixels, defaultCharWidth, scopedCharacterWidthsChangeCount})
+
+  renderLineGroups: ->
+    {renderedRowRange, pendingChanges, scrollTop, scrollLeft, editor, lineHeightInPixels, showIndentGuide, mini, invisibles, tileSize, lineWidth} = @props
+    [renderedStartRow, renderedEndRow] = renderedRowRange
+    renderedStartRow -= renderedStartRow % tileSize
+
+    for startRow in [renderedStartRow...renderedEndRow] by tileSize
+      ref = startRow
+      key = startRow
+      endRow = startRow + tileSize
+      LineGroupComponent {
+        key, ref, startRow, endRow, pendingChanges, scrollTop, scrollLeft,
+        editor, lineHeightInPixels, showIndentGuide, mini, invisibles, lineWidth
+      }
 
   componentWillMount: ->
     @measuredLines = new WeakSet
@@ -291,3 +302,11 @@ LinesComponent = React.createClass
   clearScopedCharWidths: ->
     @measuredLines.clear()
     @props.editor.clearScopedCharWidths()
+
+LineGroup = React.createClass
+  displayName: 'LineGroup'
+
+  render: ->
+    div className: 'line-group'
+
+  componentDidUpdate: ->
