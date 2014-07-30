@@ -96,6 +96,7 @@ class WindowEventHandler
 
   onKeydown: (event) ->
     atom.keymaps.handleKeyboardEvent(event)
+    event.reactSkipEventDispatch = true
 
   openLink: ({target, currentTarget}) ->
     location = target?.getAttribute('href') or currentTarget?.getAttribute('href')

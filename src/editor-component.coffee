@@ -525,6 +525,7 @@ EditorComponent = React.createClass
 
   onTextInput: (event) ->
     return unless @isInputEnabled()
+    event.reactSkipEventDispatch = true
 
     {editor} = @props
     inputNode = event.target
