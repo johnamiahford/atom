@@ -15,14 +15,17 @@ Ubuntu LTS 12.04 64-bit is the recommended platform.
   * development headers for [GNOME Keyring](https://wiki.gnome.org/Projects/GnomeKeyring)
 
 ### Ubuntu / Debian
+
 * `sudo apt-get install build-essential git libgnome-keyring-dev`
 * Instructions for  [Node.js](https://github.com/joyent/node/wiki/Installing-Node.js-via-package-manager#ubuntu-mint-elementary-os).
 
 ### Fedora
+
 * `sudo yum --assumeyes install make gcc gcc-c++ glibc-devel git-core libgnome-keyring-devel`
 * Instructions for [Node.js](https://github.com/joyent/node/wiki/Installing-Node.js-via-package-manager#fedora).
 
 ### Arch
+
 * `sudo pacman -S base-devel git nodejs libgnome-keyring`
 * `export PYTHON=/usr/bin/python2` before building Atom.
 
@@ -30,25 +33,40 @@ Ubuntu LTS 12.04 64-bit is the recommended platform.
 
 If you have problems with permissions don't forget to prefix with `sudo`
 
-Create the atom application at `$TMPDIR/atom-build/Atom`:
+From the cloned repository directory:
 
-```sh
-script/build
-```
+ 1. Build:
 
-Install the `atom` and `apm` commands to `/usr/local/bin`:
+    ```sh
+    $ script/build
+    ```
+    This will create the atom application at `$TMPDIR/atom-build/Atom`.
+ 2. Install the `atom` and `apm` commands to `/usr/local/bin` by executing:
 
-```sh
-sudo script/grunt install
-```
+    ```sh
+    $ sudo script/grunt install
+    ```
+ 3. *Optionally*, you may generate a `.deb` package at `$TMPDIR/atom-build`:
 
-Generate a `.deb` package at `$TMPDIR/atom-build`: (*optional*)
-
-```sh
-script/grunt mkdeb
-```
+    ```sh
+    $ script/grunt mkdeb
+    ```
 
 Use the newly installed atom by restarting any running atom instances.
+
+## Advanced Options
+
+### Custom install directory
+
+```sh
+sudo script/grunt install --install-dir /install/atom/here
+```
+
+### Custom build directory
+
+```sh
+script/build --build-dir /build/atom/here
+```
 
 ## Troubleshooting
 
