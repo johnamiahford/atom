@@ -500,7 +500,7 @@ EditorComponent = React.createClass
         'editor:fold-at-indent-level-9': -> editor.foldAllAtIndentLevel(8)
         'editor:toggle-line-comments': -> editor.toggleLineCommentsInSelection()
         'editor:log-cursor-scope': -> editor.logCursorScope()
-        'editor:checkout-head-revision': -> editor.checkoutHead()
+        'editor:checkout-head-revision': -> atom.project.getRepo()?.checkoutHeadForEditor(editor)
         'editor:copy-path': -> editor.copyPathToClipboard()
         'editor:move-line-up': -> editor.moveLineUp()
         'editor:move-line-down': -> editor.moveLineDown()
@@ -613,6 +613,7 @@ EditorComponent = React.createClass
 
   onMouseDown: (event) ->
     return unless event.button is 0 # only handle the left mouse button
+    return if event.target?.classList.contains('horizontal-scrollbar')
 
     {editor} = @props
     {detail, shiftKey, metaKey, ctrlKey} = event
