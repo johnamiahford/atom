@@ -91,12 +91,11 @@ LinesComponent = React.createClass
     @lineIdsByScreenRow = {}
 
   updateLines: (updateWidth) ->
-    {editor, renderedRowRange, showIndentGuide, selectionChanged, lineDecorations} = @props
-    [startRow, endRow] = renderedRowRange
+    {tokenizedLines, renderedRowRange, showIndentGuide, selectionChanged, lineDecorations} = @props
+    [startRow] = renderedRowRange
 
-    visibleLines = editor.linesForScreenRows(startRow, endRow - 1)
-    @removeLineNodes(visibleLines)
-    @appendOrUpdateVisibleLineNodes(visibleLines, startRow, updateWidth)
+    @removeLineNodes(tokenizedLines)
+    @appendOrUpdateVisibleLineNodes(tokenizedLines, startRow, updateWidth)
 
   removeLineNodes: (visibleLines=[]) ->
     {mouseWheelScreenRow} = @props
@@ -147,7 +146,7 @@ LinesComponent = React.createClass
     @lineNodesByLineId.hasOwnProperty(lineId)
 
   buildLineHTML: (line, screenRow) ->
-    {editor, mini, showIndentGuide, lineHeightInPixels, lineDecorations, lineWidth} = @props
+    {mini, showIndentGuide, lineHeightInPixels, lineDecorations, lineWidth} = @props
     {tokens, text, lineEnding, fold, isSoftWrapped, indentLevel} = line
 
     classes = ''
@@ -244,7 +243,7 @@ LinesComponent = React.createClass
     "<span class=\"#{scope.replace(/\.+/g, ' ')}\">"
 
   updateLineNode: (line, screenRow, updateWidth) ->
-    {editor, lineHeightInPixels, lineDecorations, lineWidth} = @props
+    {lineHeightInPixels, lineDecorations, lineWidth} = @props
     lineNode = @lineNodesByLineId[line.id]
 
     decorations = lineDecorations[screenRow]
@@ -286,16 +285,18 @@ LinesComponent = React.createClass
     editor.setDefaultCharWidth(charWidth)
 
   remeasureCharacterWidths: ->
+    return unless @props.performedInitialMeasurement
+
     @clearScopedCharWidths()
     @measureCharactersInNewLines()
 
   measureCharactersInNewLines: ->
-    {editor} = @props
-    [visibleStartRow, visibleEndRow] = @props.renderedRowRange
+    {editor, tokenizedLines, renderedRowRange} = @props
+    [visibleStartRow] = renderedRowRange
     node = @getDOMNode()
 
     editor.batchCharacterMeasurement =>
-      for tokenizedLine in editor.linesForScreenRows(visibleStartRow, visibleEndRow - 1)
+      for tokenizedLine in tokenizedLines
         unless @measuredLines.has(tokenizedLine)
           lineNode = @lineNodesByLineId[tokenizedLine.id]
           @measureCharactersInLine(tokenizedLine, lineNode)
