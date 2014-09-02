@@ -1,6 +1,9 @@
 {$} = require './space-pen-extensions'
 _ = require 'underscore-plus'
 remote = require 'remote'
+path = require 'path'
+CSON = require 'season'
+fs = require 'fs-plus'
 
 # Public: Provides a registry for commands that you'd like to appear in the
 # context menu.
@@ -9,7 +12,7 @@ remote = require 'remote'
 # global.
 module.exports =
 class ContextMenuManager
-  constructor: (@devMode=false) ->
+  constructor: ({@resourcePath, @devMode}) ->
     @definitions = {}
     @devModeDefinitions = {}
     @activeElement = null
@@ -21,16 +24,22 @@ class ContextMenuManager
         @commandOptions = x: e.pageX, y: e.pageY
     ]
 
+    atom.keymaps.on 'bundled-keymaps-loaded', => @loadPlatformItems()
+
+  loadPlatformItems: ->
+    menusDirPath = path.join(@resourcePath, 'menus')
+    platformMenuPath = fs.resolve(menusDirPath, process.platform, ['cson', 'json'])
+    map = CSON.readFileSync(platformMenuPath)
+    atom.contextMenu.add(platformMenuPath, map['context-menu'])
+
   # Public: Creates menu definitions from the object specified by the menu
-  # cson API.
+  # JSON API.
   #
-  # name - The path of the file that contains the menu definitions.
-  # object - The 'context-menu' object specified in the menu cson API.
-  # options - An {Object} with the following keys:
-  #   :devMode - Determines whether the entries should only be shown when
-  #              the window is in dev mode.
-  #
-  # Returns nothing.
+  # * `name` The path of the file that contains the menu definitions.
+  # * `object` The 'context-menu' object specified in the menu JSON API.
+  # * `options` An optional {Object} with the following keys:
+  #   * `devMode` Determines whether the entries should only be shown when
+  #     the window is in dev mode.
   add: (name, object, {devMode}={}) ->
     for selector, items of object
       for label, commandOrSubmenu of items
@@ -43,6 +52,8 @@ class ContextMenuManager
           menuItem = @buildMenuItem(label, commandOrSubmenu)
           @addBySelector(selector, menuItem, {devMode})
 
+    undefined
+
   buildMenuItem: (label, command) ->
     if command is '-'
       {type: 'separator'}
@@ -52,12 +63,12 @@ class ContextMenuManager
   # Registers a command to be displayed when the relevant item is right
   # clicked.
   #
-  # selector - The css selector for the active element which should include
-  #            the given command in its context menu.
-  # definition - The object containing keys which match the menu template API.
-  # options - An {Object} with the following keys:
-  #   :devMode - Indicates whether this command should only appear while the
-  #              editor is in dev mode.
+  # * `selector` The css selector for the active element which should include
+  #   the given command in its context menu.
+  # * `definition` The object containing keys which match the menu template API.
+  # * `options` An optional {Object} with the following keys:
+  #   * `devMode` Indicates whether this command should only appear while the
+  #     editor is in dev mode.
   addBySelector: (selector, definition, {devMode}={}) ->
     definitions = if devMode then @devModeDefinitions else @definitions
     if not _.findWhere(definitions[selector], definition) or _.isEqual(definition, {type: 'separator'})
@@ -79,7 +90,7 @@ class ContextMenuManager
   # active element are listed first. The further down the list you go, the higher
   # up the ancestor hierarchy they match.
   #
-  # element - The DOM element to generate the menu template for.
+  # * `element` The DOM element to generate the menu template for.
   menuTemplateForMostSpecificElement: (element, {devMode}={}) ->
     menuTemplate = @definitionsForElement(element, {devMode})
     if element.parentElement
@@ -109,9 +120,12 @@ class ContextMenuManager
       delete template.executeAtBuild
 
   # Public: Request a context menu to be displayed.
+  #
+  # * `event` A DOM event.
   showForEvent: (event) ->
     @activeElement = event.target
     menuTemplate = @combinedMenuTemplateForElement(event.target)
     return unless menuTemplate?.length > 0
     @executeBuildHandlers(event, menuTemplate)
     remote.getCurrentWindow().emit('context-menu', menuTemplate)
+    undefined
