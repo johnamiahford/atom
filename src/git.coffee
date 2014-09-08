@@ -20,22 +20,24 @@ Task = require './task'
 # For a repository with submodules this would have the following outcome:
 #
 # ```coffee
-#   repo = atom.project.getRepo()
-#   repo.getShortHead() # 'master'
-#   repo.getShortHead('vendor/path/to/a/submodule') # 'dead1234'
+# repo = atom.project.getRepo()
+# repo.getShortHead() # 'master'
+# repo.getShortHead('vendor/path/to/a/submodule') # 'dead1234'
 # ```
 #
 # ## Examples
 #
+# ### Logging the URL of the origin remote
+#
 # ```coffee
-#   git = atom.project.getRepo()
-#   console.log git.getOriginUrl()
+# git = atom.project.getRepo()
+# console.log git.getOriginUrl()
 # ```
 #
-# ## Requiring in packages
+# ### Requiring in packages
 #
 # ```coffee
-#   {Git} = require 'atom'
+# {Git} = require 'atom'
 # ```
 module.exports =
 class Git
@@ -88,10 +90,14 @@ class Git
 
   # Subscribes to buffer events.
   subscribeToBuffer: (buffer) ->
-    @subscribe buffer, 'saved reloaded path-changed', =>
+    getBufferPathStatus = =>
       if path = buffer.getPath()
         @getPathStatus(path)
-    @subscribe buffer, 'destroyed', => @unsubscribe(buffer)
+
+    @subscribe buffer.onDidSave(getBufferPathStatus)
+    @subscribe buffer.onDidReload(getBufferPathStatus)
+    @subscribe buffer.onDidChangePath(getBufferPathStatus)
+    @subscribe buffer.onDidDestroy => @unsubscribe(buffer)
 
   # Subscribes to editor view event.
   checkoutHeadForEditor: (editor) ->

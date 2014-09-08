@@ -49,7 +49,7 @@ class Project extends Model
 
     for buffer in @buffers
       do (buffer) =>
-        buffer.once 'destroyed', => @removeBuffer(buffer)
+        buffer.onDidDestroy => @removeBuffer(buffer)
 
     @setPath(path)
 
@@ -84,6 +84,7 @@ class Project extends Model
   #
   # * `projectPath` {String} path
   setPath: (projectPath) ->
+    projectPath = path.normalize(projectPath) if projectPath
     @path = projectPath
     @rootDirectory?.off()
 
@@ -215,11 +216,11 @@ class Project extends Model
 
   addBuffer: (buffer, options={}) ->
     @addBufferAtIndex(buffer, @buffers.length, options)
-    buffer.once 'destroyed', => @removeBuffer(buffer)
+    buffer.onDidDestroy => @removeBuffer(buffer)
 
   addBufferAtIndex: (buffer, index, options={}) ->
     @buffers.splice(index, 0, buffer)
-    buffer.once 'destroyed', => @removeBuffer(buffer)
+    buffer.onDidDestroy => @removeBuffer(buffer)
     @emit 'buffer-created', buffer
     buffer
 
