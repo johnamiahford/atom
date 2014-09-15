@@ -101,11 +101,12 @@ class AtomApplication
     window.once 'window:loaded', =>
       @autoUpdateManager.emitUpdateAvailableEvent(window)
 
-    focusHandler = => @lastFocusedWindow = window
-    window.browserWindow.on 'focus', focusHandler
-    window.browserWindow.once 'closed', =>
-      @lastFocusedWindow = null if window is @lastFocusedWindow
-      window.browserWindow.removeListener 'focus', focusHandler
+    unless window.isSpec
+      focusHandler = => @lastFocusedWindow = window
+      window.browserWindow.on 'focus', focusHandler
+      window.browserWindow.once 'closed', =>
+        @lastFocusedWindow = null if window is @lastFocusedWindow
+        window.browserWindow.removeListener 'focus', focusHandler
 
   # Creates server to listen for additional atom application launches.
   #
@@ -483,6 +484,14 @@ class AtomApplication
         when 'all' then ['openFile', 'openDirectory']
         else throw new Error("#{type} is an invalid type for promptForPath")
 
+    # Show the open dialog as child window on Windows and Linux, and as
+    # independent dialog on OS X. This matches most native apps.
+    parentWindow =
+      if process.platform is 'darwin'
+        null
+      else
+        BrowserWindow.getFocusedWindow()
+
     dialog = require 'dialog'
-    dialog.showOpenDialog title: 'Open', properties: properties.concat(['multiSelections', 'createDirectory']), (pathsToOpen) =>
+    dialog.showOpenDialog parentWindow, title: 'Open', properties: properties.concat(['multiSelections', 'createDirectory']), (pathsToOpen) =>
       @openPaths({pathsToOpen, devMode, safeMode, window})

@@ -1,46 +1,92 @@
 path = require 'path'
 
 _ = require 'underscore-plus'
-{Emitter} = require 'emissary'
+EmitterMixin = require('emissary').Emitter
+{Emitter} = require 'event-kit'
 {File} = require 'pathwatcher'
 fs = require 'fs-plus'
 Q = require 'q'
+{deprecate} = require 'grim'
 
 Package = require './package'
 
 # Extended: Handles loading and activating available themes.
 #
 # An instance of this class is always available as the `atom.themes` global.
-#
-# ## Events
-#
-# ### reloaded
-#
-# Extended: Emitted when all styles have been reloaded.
-#
-# ### stylesheet-added
-#
-# Extended: Emitted when a stylesheet has been added.
-#
-# * `stylesheet` {StyleSheet} object that was removed
-#
-# ### stylesheet-removed
-#
-# Extended: Emitted when a stylesheet has been removed.
-#
-# * `stylesheet` {StyleSheet} object that was removed
-#
-# ### stylesheets-changed
-#
-# Extended: Emitted anytime any style sheet is added or removed from the editor
-#
 module.exports =
 class ThemeManager
-  Emitter.includeInto(this)
+  EmitterMixin.includeInto(this)
 
   constructor: ({@packageManager, @resourcePath, @configDirPath, @safeMode}) ->
+    @emitter = new Emitter
     @lessCache = null
+    @initialLoadComplete = false
     @packageManager.registerPackageActivator(this, ['theme'])
+
+  ###
+  Section: Event Subscription
+  ###
+
+  # Essential: Invoke `callback` when all styles have been reloaded.
+  #
+  # * `callback` {Function}
+  onDidReloadAll: (callback) ->
+    @emitter.on 'did-reload-all', callback
+
+  # Essential: Invoke `callback` when a stylesheet has been added to the dom.
+  #
+  # * `callback` {Function}
+  #   * `stylesheet` {StyleSheet} the style node
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  onDidAddStylesheet: (callback) ->
+    @emitter.on 'did-add-stylesheet', callback
+
+  # Essential: Invoke `callback` when a stylesheet has been removed from the dom.
+  #
+  # * `callback` {Function}
+  #   * `stylesheet` {StyleSheet} the style node
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  onDidRemoveStylesheet: (callback) ->
+    @emitter.on 'did-remove-stylesheet', callback
+
+  # Essential: Invoke `callback` when a stylesheet has been updated.
+  #
+  # * `callback` {Function}
+  #   * `stylesheet` {StyleSheet} the style node
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  onDidUpdateStylesheet: (callback) ->
+    @emitter.on 'did-update-stylesheet', callback
+
+  # Essential: Invoke `callback` when any stylesheet has been updated, added, or removed.
+  #
+  # * `callback` {Function}
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  onDidChangeStylesheets: (callback) ->
+    @emitter.on 'did-change-stylesheets', callback
+
+  on: (eventName) ->
+    switch eventName
+      when 'reloaded'
+        deprecate 'Use ThemeManager::onDidReloadAll instead'
+      when 'stylesheet-added'
+        deprecate 'Use ThemeManager::onDidAddStylesheet instead'
+      when 'stylesheet-removed'
+        deprecate 'Use ThemeManager::onDidRemoveStylesheet instead'
+      when 'stylesheet-updated'
+        deprecate 'Use ThemeManager::onDidUpdateStylesheet instead'
+      when 'stylesheets-changed'
+        deprecate 'Use ThemeManager::onDidChangeStylesheets instead'
+      else
+        deprecate 'ThemeManager::on is deprecated. Use event subscription methods instead.'
+    EmitterMixin::on.apply(this, arguments)
+
+  ###
+  Section: Instance Methods
+  ###
 
   getAvailableNames: ->
     # TODO: Maybe should change to list all the available themes out there?
@@ -62,7 +108,7 @@ class ThemeManager
   getLoadedThemes: ->
     pack for pack in @packageManager.getLoadedPackages() when pack.isTheme()
 
-  activatePackages: (themePackages) -> @activateThemes()
+  activatePackages: -> @activateThemes()
 
   # Get the enabled theme names from the config.
   #
@@ -120,7 +166,9 @@ class ThemeManager
         @refreshLessCache() # Update cache again now that @getActiveThemes() is populated
         @loadUserStylesheet()
         @reloadBaseStylesheets()
+        @initialLoadComplete = true
         @emit 'reloaded'
+        @emitter.emit 'did-reload-all'
         deferred.resolve()
 
     deferred.promise
@@ -130,6 +178,8 @@ class ThemeManager
     @unwatchUserStylesheet()
     @packageManager.deactivatePackage(pack.name) for pack in @getActiveThemes()
     null
+
+  isInitialLoadComplete: -> @initialLoadComplete
 
   addActiveThemeClasses: ->
     for pack in @getActiveThemes()
@@ -260,7 +310,9 @@ class ThemeManager
       {sheet} = element
       element.remove()
       @emit 'stylesheet-removed', sheet
+      @emitter.emit 'did-remove-stylesheet', sheet
       @emit 'stylesheets-changed'
+      @emitter.emit 'did-change-stylesheets'
 
   applyStylesheet: (path, text, type='bundled') ->
     styleId = @stringToId(path)
@@ -268,6 +320,7 @@ class ThemeManager
 
     if styleElement?
       @emit 'stylesheet-removed', styleElement.sheet
+      @emitter.emit 'did-remove-stylesheet', styleElement.sheet
       styleElement.textContent = text
     else
       styleElement = document.createElement('style')
@@ -282,4 +335,20 @@ class ThemeManager
         document.head.appendChild(styleElement)
 
     @emit 'stylesheet-added', styleElement.sheet
+    @emitter.emit 'did-add-stylesheet', styleElement.sheet
     @emit 'stylesheets-changed'
+    @emitter.emit 'did-change-stylesheets'
+
+  updateGlobalEditorStyle: (property, value) ->
+    unless styleNode = @stylesheetElementForId('global-editor-styles')
+      @applyStylesheet('global-editor-styles', '.editor {}')
+      styleNode = @stylesheetElementForId('global-editor-styles')
+
+    {sheet} = styleNode
+    editorRule = sheet.cssRules[0]
+    editorRule.style[property] = value
+
+    @emit 'stylesheet-updated', sheet
+    @emitter.emit 'did-update-stylesheet', sheet
+    @emit 'stylesheets-changed'
+    @emitter.emit 'did-change-stylesheets'
