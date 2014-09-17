@@ -184,6 +184,8 @@ EditorComponent = React.createClass
     @subscribe scrollbarStyle.changes, @refreshScrollbars
 
     @domPollingIntervalId = setInterval(@pollDOM, @domPollingInterval)
+    @updateParentViewFocusedClassIfNeeded({})
+    @updateParentViewMiniClassIfNeeded({})
     @checkForVisibilityChange()
 
   componentWillUnmount: ->
@@ -478,7 +480,7 @@ EditorComponent = React.createClass
         'editor:add-selection-above': -> editor.addSelectionAbove()
         'editor:split-selections-into-lines': -> editor.splitSelectionsIntoLines()
         'editor:toggle-soft-tabs': -> editor.toggleSoftTabs()
-        'editor:toggle-soft-wrapped': -> editor.toggleSoftWrapped()
+        'editor:toggle-soft-wrap': -> editor.toggleSoftWrapped()
         'editor:fold-all': -> editor.foldAll()
         'editor:unfold-all': -> editor.unfoldAll()
         'editor:fold-current-row': -> editor.foldCurrentRow()
