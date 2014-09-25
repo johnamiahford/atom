@@ -6,18 +6,20 @@ Q = require 'q'
 Serializable = require 'serializable'
 Delegator = require 'delegato'
 {Emitter} = require 'event-kit'
-Editor = require './editor'
+TextEditor = require './text-editor'
 PaneContainer = require './pane-container'
 Pane = require './pane'
+ViewRegistry = require './view-registry'
+WorkspaceView = null
 
-# Public: Represents the state of the user interface for the entire window.
+# Essential: Represents the state of the user interface for the entire window.
 # An instance of this class is available via the `atom.workspace` global.
 #
 # Interact with this object to open files, be notified of current and future
 # editors, and manipulate panes. To add panels, you'll need to use the
 # {WorkspaceView} class for now until we establish APIs at the model layer.
 #
-# * `editor` {Editor} the new editor
+# * `editor` {TextEditor} the new editor
 #
 module.exports =
 class Workspace extends Model
@@ -27,7 +29,7 @@ class Workspace extends Model
   @delegatesProperty 'activePane', 'activePaneItem', toProperty: 'paneContainer'
 
   @properties
-    paneContainer: -> new PaneContainer
+    paneContainer: null
     fullScreen: false
     destroyedItemUris: -> []
 
@@ -37,6 +39,8 @@ class Workspace extends Model
     @emitter = new Emitter
     @openers = []
 
+    @viewRegistry ?= new ViewRegistry
+    @paneContainer ?= new PaneContainer({@viewRegistry})
     @paneContainer.onDidDestroyPaneItem(@onPaneItemDestroyed)
 
     @registerOpener (filePath) =>
@@ -55,6 +59,8 @@ class Workspace extends Model
     for packageName in params.packagesWithActiveGrammars ? []
       atom.packages.getLoadedPackage(packageName)?.loadGrammarsSync()
 
+    params.viewRegistry = new ViewRegistry
+    params.paneContainer.viewRegistry = params.viewRegistry
     params.paneContainer = PaneContainer.deserialize(params.paneContainer)
     params
 
@@ -63,6 +69,9 @@ class Workspace extends Model
     paneContainer: @paneContainer.serialize()
     fullScreen: atom.isFullScreen()
     packagesWithActiveGrammars: @getPackageNamesWithActiveGrammars()
+
+  getViewClass: ->
+    WorkspaceView ?= require './workspace-view'
 
   getPackageNamesWithActiveGrammars: ->
     packageNames = []
@@ -90,6 +99,52 @@ class Workspace extends Model
   ###
   Section: Event Subscription
   ###
+
+  # Essential: Invoke the given callback with all current and future text
+  # editors in the workspace.
+  #
+  # * `callback` {Function} to be called with current and future text editors.
+  #   * `editor` An {TextEditor} that is present in {::getTextEditors} at the time
+  #     of subscription or that is added at some later time.
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  observeTextEditors: (callback) ->
+    callback(textEditor) for textEditor in @getTextEditors()
+    @onDidAddTextEditor ({textEditor}) -> callback(textEditor)
+
+  # Essential: Invoke the given callback with all current and future panes items in
+  # the workspace.
+  #
+  # * `callback` {Function} to be called with current and future pane items.
+  #   * `item` An item that is present in {::getPaneItems} at the time of
+  #      subscription or that is added at some later time.
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  observePaneItems: (callback) -> @paneContainer.observePaneItems(callback)
+
+  # Essential: Invoke the given callback when the active pane item changes.
+  #
+  # * `callback` {Function} to be called when the active pane item changes.
+  #   * `event` {Object} with the following keys:
+  #     * `activeItem` The active pane item.
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  onDidChangeActivePaneItem: (callback) -> @paneContainer.onDidChangeActivePaneItem(callback)
+
+  # Essential: Invoke the given callback whenever an item is opened. Unlike
+  # {::onDidAddPaneItem}, observers will be notified for items that are already
+  # present in the workspace when they are reopened.
+  #
+  # * `callback` {Function} to be called whenever an item is opened.
+  #   * `event` {Object} with the following keys:
+  #     * `uri` {String} representing the opened URI. Could be `undefined`.
+  #     * `item` The opened item.
+  #     * `pane` The pane in which the item was opened.
+  #     * `index` The index of the opened item on its pane.
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  onDidOpen: (callback) ->
+    @emitter.on 'did-open', callback
 
   # Extended: Invoke the given callback when a pane is added to the workspace.
   #
@@ -140,31 +195,12 @@ class Workspace extends Model
   # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   onDidAddPaneItem: (callback) -> @paneContainer.onDidAddPaneItem(callback)
 
-  # Extended: Invoke the given callback when the active pane item changes.
-  #
-  # * `callback` {Function} to be called when the active pane item changes.
-  #   * `event` {Object} with the following keys:
-  #     * `activeItem` The active pane item.
-  #
-  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
-  onDidChangeActivePaneItem: (callback) -> @paneContainer.onDidChangeActivePaneItem(callback)
-
-  # Extended: Invoke the given callback with all current and future panes items in
-  # the workspace.
-  #
-  # * `callback` {Function} to be called with current and future pane items.
-  #   * `item` An item that is present in {::getPaneItems} at the time of
-  #      subscription or that is added at some later time.
-  #
-  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
-  observePaneItems: (callback) -> @paneContainer.observePaneItems(callback)
-
   # Extended: Invoke the given callback when a text editor is added to the
   # workspace.
   #
   # * `callback` {Function} to be called panes are added.
   #   * `event` {Object} with the following keys:
-  #     * `textEditor` {Editor} that was added.
+  #     * `textEditor` {TextEditor} that was added.
   #     * `pane` {Pane} containing the added text editor.
   #     * `index` {Number} indicating the index of the added text editor in its
   #        pane.
@@ -172,34 +208,7 @@ class Workspace extends Model
   # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   onDidAddTextEditor: (callback) ->
     @onDidAddPaneItem ({item, pane, index}) ->
-      callback({textEditor: item, pane, index}) if item instanceof Editor
-
-  # Essential: Invoke the given callback with all current and future text
-  # editors in the workspace.
-  #
-  # * `callback` {Function} to be called with current and future text editors.
-  #   * `editor` An {Editor} that is present in {::getTextEditors} at the time
-  #     of subscription or that is added at some later time.
-  #
-  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
-  observeTextEditors: (callback) ->
-    callback(textEditor) for textEditor in @getTextEditors()
-    @onDidAddTextEditor ({textEditor}) -> callback(textEditor)
-
-  # Essential: Invoke the given callback whenever an item is opened. Unlike
-  # ::onDidAddPaneItem, observers will be notified for items that are already
-  # present in the workspace when they are reopened.
-  #
-  # * `callback` {Function} to be called whenever an item is opened.
-  #   * `event` {Object} with the following keys:
-  #     * `uri` {String} representing the opened URI. Could be `undefined`.
-  #     * `item` The opened item.
-  #     * `pane` The pane in which the item was opened.
-  #     * `index` The index of the opened item on its pane.
-  #
-  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
-  onDidOpen: (callback) ->
-    @emitter.on 'did-open', callback
+      callback({textEditor: item, pane, index}) if item instanceof TextEditor
 
   eachEditor: (callback) ->
     deprecate("Use Workspace::observeTextEditors instead")
@@ -212,7 +221,7 @@ class Workspace extends Model
 
     editors = []
     for pane in @paneContainer.getPanes()
-      editors.push(item) for item in pane.getItems() when item instanceof Editor
+      editors.push(item) for item in pane.getItems() when item instanceof TextEditor
 
     editors
 
@@ -249,7 +258,7 @@ class Workspace extends Model
   #     If `false`, only the active pane will be searched for
   #     an existing item for the same URI. Defaults to `false`.
   #
-  # Returns a promise that resolves to the {Editor} for the file URI.
+  # Returns a promise that resolves to the {TextEditor} for the file URI.
   open: (uri, options={}) ->
     searchAllPanes = options.searchAllPanes
     split = options.split
@@ -323,7 +332,7 @@ class Workspace extends Model
       .catch (error) ->
         console.error(error.stack ? error)
 
-  # Extended: Asynchronously reopens the last-closed item's URI if it hasn't already been
+  # Public: Asynchronously reopens the last-closed item's URI if it hasn't already been
   # reopened.
   #
   # Returns a promise that is resolved when the item is opened
@@ -339,9 +348,11 @@ class Workspace extends Model
     if uri = @destroyedItemUris.pop()
       @openSync(uri)
 
-  # Extended: Register an opener for a uri.
+  # TODO: make ::registerOpener() return a disposable
+
+  # Public: Register an opener for a uri.
   #
-  # An {Editor} will be used if no openers return a value.
+  # An {TextEditor} will be used if no openers return a value.
   #
   # ## Examples
   #
@@ -355,7 +366,7 @@ class Workspace extends Model
   registerOpener: (opener) ->
     @openers.push(opener)
 
-  # Extended: Unregister an opener registered with {::registerOpener}.
+  # Unregister an opener registered with {::registerOpener}.
   unregisterOpener: (opener) ->
     _.remove(@openers, opener)
 
@@ -380,23 +391,23 @@ class Workspace extends Model
 
   # Essential: Get all text editors in the workspace.
   #
-  # Returns an {Array} of {Editor}s.
+  # Returns an {Array} of {TextEditor}s.
   getTextEditors: ->
-    @getPaneItems().filter (item) -> item instanceof Editor
+    @getPaneItems().filter (item) -> item instanceof TextEditor
 
-  # Essential: Get the active item if it is an {Editor}.
+  # Essential: Get the active item if it is an {TextEditor}.
   #
-  # Returns an {Editor} or `undefined` if the current active item is not an
-  # {Editor}.
+  # Returns an {TextEditor} or `undefined` if the current active item is not an
+  # {TextEditor}.
   getActiveTextEditor: ->
     activeItem = @getActivePaneItem()
-    activeItem if activeItem instanceof Editor
+    activeItem if activeItem instanceof TextEditor
 
   # Deprecated:
   getActiveEditor: ->
     @activePane?.getActiveEditor()
 
-  # Extended: Save all pane items.
+  # Save all pane items.
   saveAll: ->
     @paneContainer.saveAll()
 
@@ -486,3 +497,85 @@ class Workspace extends Model
   # Called by Model superclass when destroyed
   destroyed: ->
     @paneContainer.destroy()
+
+  ###
+  Section: View Management
+  ###
+
+  # Essential: Get the view associated with an object in the workspace.
+  #
+  # If you're just *using* the workspace, you shouldn't need to access the view
+  # layer, but view layer access may be necessary if you want to perform DOM
+  # manipulation that isn't supported via the model API.
+  #
+  # ## Examples
+  #
+  # ### Getting An Editor View
+  # ```coffee
+  # textEditor = atom.workspace.getActiveTextEditor()
+  # textEditorView = atom.workspace.getView(textEditor)
+  # ```
+  #
+  # ### Getting A Pane View
+  # ```coffee
+  # pane = atom.workspace.getActivePane()
+  # paneView = atom.workspace.getView(pane)
+  # ```
+  #
+  # ### Getting The Workspace View
+  #
+  # ```coffee
+  # workspaceView = atom.workspace.getView(atom.workspace)
+  # ```
+  #
+  # * `object` The object for which you want to retrieve a view. This can be a
+  #   pane item, a pane, or the workspace itself.
+  #
+  # Returns a DOM element.
+  getView: (object) ->
+    @viewRegistry.getView(object)
+
+  # Essential: Add a provider that will be used to construct views in the
+  # workspace's view layer based on model objects in its model layer.
+  #
+  # If you're adding your own kind of pane item, a good strategy for all but the
+  # simplest items is to separate the model and the view. The model handles
+  # application logic and is the primary point of API interaction. The view
+  # just handles presentation.
+  #
+  # Use view providers to inform the workspace how your model objects should be
+  # presented in the DOM. A view provider must always return a DOM node, which
+  # makes [HTML 5 custom elements](http://www.html5rocks.com/en/tutorials/webcomponents/customelements/)
+  # an ideal tool for implementing views in Atom.
+  #
+  # ## Example
+  #
+  # Text editors are divided into a model and a view layer, so when you interact
+  # with methods like `atom.workspace.getActiveTextEditor()` you're only going
+  # to get the model object. We display text editors on screen by teaching the
+  # workspace what view constructor it should use to represent them:
+  #
+  # ```coffee
+  # atom.workspace.addViewProvider
+  #   modelConstructor: TextEditor
+  #   viewConstructor: TextEditorElement
+  # ```
+  #
+  # * `providerSpec` {Object} containing the following keys:
+  #   * `modelConstructor` Constructor {Function} for your model.
+  #   * `viewConstructor` (Optional) Constructor {Function} for your view. It
+  #     should be a subclass of `HTMLElement` (that is, your view should be a
+  #     DOM node) and   have a `::setModel()` method which will be called
+  #     immediately after construction. If you don't supply this property, you
+  #     must supply the `createView` property with a function that never returns
+  #     `undefined`.
+  #   * `createView` (Optional) Factory {Function} that must return a subclass
+  #     of `HTMLElement` or `undefined`. If this property is not present or the
+  #     function returns `undefined`, the view provider will fall back to the
+  #     `viewConstructor` property. If you don't provide this property, you must
+  #     provider a `viewConstructor` property.
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to remove the
+  # added provider.
+  addViewProvider: (providerSpec) ->
+    @viewRegistry.addViewProvider(providerSpec)

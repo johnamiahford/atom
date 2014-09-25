@@ -4,7 +4,7 @@
 Serializable = require 'serializable'
 Grim = require 'grim'
 PaneAxis = require './pane-axis'
-Editor = require './editor'
+TextEditor = require './text-editor'
 PaneView = null
 
 # Extended: A container for presenting content in the center of the workspace.
@@ -55,6 +55,9 @@ class Pane extends Model
 
   # Called by the view layer to construct a view for this model.
   getViewClass: -> PaneView ?= require './pane-view'
+
+  getView: (object) ->
+    @container.getView(object)
 
   getParent: -> @parent
 
@@ -258,9 +261,9 @@ class Pane extends Model
       @emitter.emit 'did-change-active-item', @activeItem
     @activeItem
 
-  # Return an {Editor} if the pane item is an {Editor}, or null otherwise.
+  # Return an {TextEditor} if the pane item is an {TextEditor}, or null otherwise.
   getActiveEditor: ->
-    @activeItem if @activeItem instanceof Editor
+    @activeItem if @activeItem instanceof TextEditor
 
   # Public: Return the item at the given index.
   #
@@ -377,8 +380,8 @@ class Pane extends Model
   # * `index` {Number} indicating the index to which to move the item in the
   #   given pane.
   moveItemToPane: (item, pane, index) ->
-    pane.addItem(item, index)
     @removeItem(item)
+    pane.addItem(item, index)
 
   # Public: Destroy the active item and activate the next item.
   destroyActiveItem: ->
@@ -518,6 +521,7 @@ class Pane extends Model
   destroyed: ->
     @container.activateNextPane() if @isActive()
     @emitter.emit 'did-destroy'
+    @emitter.dispose()
     item.destroy?() for item in @items.slice()
 
   ###

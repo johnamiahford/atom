@@ -6,9 +6,9 @@ PropertyAccessors = require 'property-accessors'
 
 Pane = require './pane'
 
-# Extended: A container which can contains multiple items to be switched between.
+# A container which can contains multiple items to be switched between.
 #
-# Items can be almost anything however most commonly they're {EditorView}s.
+# Items can be almost anything however most commonly they're {TextEditorView}s.
 #
 # Most packages won't need to use this class, unless you're interested in
 # building a package that deals with switching between panes or items.
@@ -33,17 +33,9 @@ class PaneView extends View
 
   previousActiveItem: null
 
-  initialize: (args...) ->
+  initialize: (@model) ->
     @subscriptions = new CompositeDisposable
-
-    if args[0] instanceof Pane
-      @model = args[0]
-    else
-      @model = new Pane(items: args)
-      @model._view = this
-
     @onItemAdded(item) for item in @items
-    @viewsByItem = new WeakMap()
     @handleEvents()
 
   handleEvents: ->
@@ -162,7 +154,7 @@ class PaneView extends View
       deprecate 'Please return a Disposable object from your ::onDidChangeTitle method!' unless disposable?.dispose?
       @activeItemDisposables.add(disposable) if disposable?.dispose?
     else if item.on?
-      deprecate '::on methods for items are no longer supported. If you would like your item to title change behavior, please implement a ::onDidChangeTitle() method.'
+      deprecate '::on methods for items are no longer supported. If you would like your item to support title change behavior, please implement a ::onDidChangeTitle() method.'
       disposable = item.on('title-changed', @activeItemTitleChanged)
       @activeItemDisposables.add(disposable) if disposable?.dispose?
 
@@ -175,7 +167,7 @@ class PaneView extends View
       item.on('modified-status-changed', @activeItemModifiedChanged)
       @activeItemDisposables.add(disposable) if disposable?.dispose?
 
-    view = @viewForItem(item)
+    view = @model.getView(item).__spacePenView
     otherView.hide() for otherView in @itemViews.children().not(view).views()
     @itemViews.append(view) unless view.parent().is(@itemViews)
     view.show() if @attached
@@ -189,8 +181,8 @@ class PaneView extends View
   onItemRemoved: ({item, index, destroyed}) =>
     if item instanceof $
       viewToRemove = item
-    else if viewToRemove = @viewsByItem.get(item)
-      @viewsByItem.delete(item)
+    else
+      viewToRemove = @model.getView(item).__spacePenView
 
     if viewToRemove?
       if destroyed
@@ -213,27 +205,15 @@ class PaneView extends View
   activeItemModifiedChanged: =>
     @trigger 'pane:active-item-modified-status-changed'
 
-  viewForItem: (item) ->
-    return unless item?
-    if item instanceof $
-      item
-    else if view = @viewsByItem.get(item)
-      view
-    else
-      viewClass = item.getViewClass()
-      view = new viewClass(item)
-      @viewsByItem.set(item, view)
-      view
+  @::accessor 'activeView', -> @model.getView(@activeItem)?.__spacePenView
 
-  @::accessor 'activeView', -> @viewForItem(@activeItem)
+  splitLeft: (items...) -> @model.getView(@model.splitLeft({items})).__spacePenView
 
-  splitLeft: (items...) -> @model.splitLeft({items})._view
+  splitRight: (items...) -> @model.getView(@model.splitRight({items})).__spacePenView
 
-  splitRight: (items...) -> @model.splitRight({items})._view
+  splitUp: (items...) -> @model.getView(@model.splitUp({items})).__spacePenView
 
-  splitUp: (items...) -> @model.splitUp({items})._view
-
-  splitDown: (items...) -> @model.splitDown({items})._view
+  splitDown: (items...) -> @model.getView(@model.splitDown({items})).__spacePenView
 
   # Public: Get the container view housing this pane.
   #

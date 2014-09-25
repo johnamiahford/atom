@@ -11,9 +11,9 @@ Serializable = require 'serializable'
 TextBuffer = require 'text-buffer'
 {Directory} = require 'pathwatcher'
 
-Editor = require './editor'
+TextEditor = require './text-editor'
 Task = require './task'
-Git = require './git'
+GitRepository = require './git-repository'
 
 # Extended: Represents a project that's opened in Atom.
 #
@@ -23,13 +23,15 @@ class Project extends Model
   atom.deserializers.add(this)
   Serializable.includeInto(this)
 
-  # Public: Find the local path for the given repository URL.
-  #
-  # * `repoUrl` {String} url to a git repository
   @pathForRepositoryUrl: (repoUrl) ->
+    deprecate '::pathForRepositoryUrl will be removed. Please remove from your code.'
     [repoName] = url.parse(repoUrl).path.split('/')[-1..]
     repoName = repoName.replace(/\.git$/, '')
     path.join(atom.config.get('core.projectHome'), repoName)
+
+  ###
+  Section: Construction and Destruction
+  ###
 
   constructor: ({path, @buffers}={}) ->
     @buffers ?= []
@@ -39,14 +41,6 @@ class Project extends Model
         buffer.onDidDestroy => @removeBuffer(buffer)
 
     @setPath(path)
-
-  serializeParams: ->
-    path: @path
-    buffers: _.compact(@buffers.map (buffer) -> buffer.serialize() if buffer.isRetained())
-
-  deserializeParams: (params) ->
-    params.buffers = params.buffers.map (bufferState) -> atom.deserializers.deserialize(bufferState)
-    params
 
   destroyed: ->
     buffer.destroy() for buffer in @getBuffers()
@@ -60,8 +54,28 @@ class Project extends Model
   destroyUnretainedBuffers: ->
     buffer.destroy() for buffer in @getBuffers() when not buffer.isRetained()
 
-  # Public: Returns the {Git} repository if available.
+  ###
+  Section: Serialization
+  ###
+
+  serializeParams: ->
+    path: @path
+    buffers: _.compact(@buffers.map (buffer) -> buffer.serialize() if buffer.isRetained())
+
+  deserializeParams: (params) ->
+    params.buffers = params.buffers.map (bufferState) -> atom.deserializers.deserialize(bufferState)
+    params
+
+  ###
+  Section: Accessing the git repository
+  ###
+
+  # Public: Returns the {GitRepository} if available.
   getRepo: -> @repo
+
+  ###
+  Section: Managing Paths
+  ###
 
   # Public: Returns the project's {String} fullpath.
   getPath: ->
@@ -79,7 +93,7 @@ class Project extends Model
     if projectPath?
       directory = if fs.isDirectorySync(projectPath) then projectPath else path.dirname(projectPath)
       @rootDirectory = new Directory(directory)
-      if @repo = Git.open(directory, project: this)
+      if @repo = GitRepository.open(directory, project: this)
         @repo.refreshIndex()
         @repo.refreshStatus()
     else
@@ -124,13 +138,106 @@ class Project extends Model
   contains: (pathToCheck) ->
     @rootDirectory?.contains(pathToCheck) ? false
 
+  ###
+  Section: Searching and Replacing
+  ###
+
+  # Public: Performs a search across all the files in the project.
+  #
+  # * `regex` {RegExp} to search with.
+  # * `options` (optional) {Object} (default: {})
+  #   * `paths` An {Array} of glob patterns to search within
+  # * `iterator` {Function} callback on each file found
+  scan: (regex, options={}, iterator) ->
+    if _.isFunction(options)
+      iterator = options
+      options = {}
+
+    deferred = Q.defer()
+
+    searchOptions =
+      ignoreCase: regex.ignoreCase
+      inclusions: options.paths
+      includeHidden: true
+      excludeVcsIgnores: atom.config.get('core.excludeVcsIgnoredPaths')
+      exclusions: atom.config.get('core.ignoredNames')
+
+    task = Task.once require.resolve('./scan-handler'), @getPath(), regex.source, searchOptions, ->
+      deferred.resolve()
+
+    task.on 'scan:result-found', (result) =>
+      iterator(result) unless @isPathModified(result.filePath)
+
+    task.on 'scan:file-error', (error) ->
+      iterator(null, error)
+
+    if _.isFunction(options.onPathsSearched)
+      task.on 'scan:paths-searched', (numberOfPathsSearched) ->
+        options.onPathsSearched(numberOfPathsSearched)
+
+    for buffer in @getBuffers() when buffer.isModified()
+      filePath = buffer.getPath()
+      continue unless @contains(filePath)
+      matches = []
+      buffer.scan regex, (match) -> matches.push match
+      iterator {filePath, matches} if matches.length > 0
+
+    promise = deferred.promise
+    promise.cancel = ->
+      task.terminate()
+      deferred.resolve('cancelled')
+    promise
+
+  # Public: Performs a replace across all the specified files in the project.
+  #
+  # * `regex` A {RegExp} to search with.
+  # * `replacementText` Text to replace all matches of regex with
+  # * `filePaths` List of file path strings to run the replace on.
+  # * `iterator` A {Function} callback on each file with replacements:
+  #   * `options` {Object} with keys `filePath` and `replacements`
+  replace: (regex, replacementText, filePaths, iterator) ->
+    deferred = Q.defer()
+
+    openPaths = (buffer.getPath() for buffer in @getBuffers())
+    outOfProcessPaths = _.difference(filePaths, openPaths)
+
+    inProcessFinished = !openPaths.length
+    outOfProcessFinished = !outOfProcessPaths.length
+    checkFinished = ->
+      deferred.resolve() if outOfProcessFinished and inProcessFinished
+
+    unless outOfProcessFinished.length
+      flags = 'g'
+      flags += 'i' if regex.ignoreCase
+
+      task = Task.once require.resolve('./replace-handler'), outOfProcessPaths, regex.source, flags, replacementText, ->
+        outOfProcessFinished = true
+        checkFinished()
+
+      task.on 'replace:path-replaced', iterator
+      task.on 'replace:file-error', (error) -> iterator(null, error)
+
+    for buffer in @getBuffers()
+      continue unless buffer.getPath() in filePaths
+      replacements = buffer.replace(regex, replacementText, iterator)
+      iterator({filePath: buffer.getPath(), replacements}) if replacements
+
+    inProcessFinished = true
+    checkFinished()
+
+    deferred.promise
+
+  ###
+  Section: Private
+  ###
+
   # Given a path to a file, this constructs and associates a new
-  # {Editor}, showing the file.
+  # {TextEditor}, showing the file.
   #
   # * `filePath` The {String} path of the file to associate with.
-  # * `options` Options that you can pass to the {Editor} constructor.
+  # * `options` Options that you can pass to the {TextEditor} constructor.
   #
-  # Returns a promise that resolves to an {Editor}.
+  # Returns a promise that resolves to an {TextEditor}.
   open: (filePath, options={}) ->
     filePath = @resolve(filePath)
     @bufferForPath(filePath).then (buffer) =>
@@ -222,93 +329,8 @@ class Project extends Model
     [buffer] = @buffers.splice(index, 1)
     buffer?.destroy()
 
-  # Public: Performs a search across all the files in the project.
-  #
-  # * `regex` {RegExp} to search with.
-  # * `options` (optional) {Object} (default: {})
-  #   * `paths` An {Array} of glob patterns to search within
-  # * `iterator` {Function} callback on each file found
-  scan: (regex, options={}, iterator) ->
-    if _.isFunction(options)
-      iterator = options
-      options = {}
-
-    deferred = Q.defer()
-
-    searchOptions =
-      ignoreCase: regex.ignoreCase
-      inclusions: options.paths
-      includeHidden: true
-      excludeVcsIgnores: atom.config.get('core.excludeVcsIgnoredPaths')
-      exclusions: atom.config.get('core.ignoredNames')
-
-    task = Task.once require.resolve('./scan-handler'), @getPath(), regex.source, searchOptions, ->
-      deferred.resolve()
-
-    task.on 'scan:result-found', (result) =>
-      iterator(result) unless @isPathModified(result.filePath)
-
-    task.on 'scan:file-error', (error) ->
-      iterator(null, error)
-
-    if _.isFunction(options.onPathsSearched)
-      task.on 'scan:paths-searched', (numberOfPathsSearched) ->
-        options.onPathsSearched(numberOfPathsSearched)
-
-    for buffer in @getBuffers() when buffer.isModified()
-      filePath = buffer.getPath()
-      continue unless @contains(filePath)
-      matches = []
-      buffer.scan regex, (match) -> matches.push match
-      iterator {filePath, matches} if matches.length > 0
-
-    promise = deferred.promise
-    promise.cancel = ->
-      task.terminate()
-      deferred.resolve('cancelled')
-    promise
-
-  # Public: Performs a replace across all the specified files in the project.
-  #
-  # * `regex` A {RegExp} to search with.
-  # * `replacementText` Text to replace all matches of regex with
-  # * `filePaths` List of file path strings to run the replace on.
-  # * `iterator` A {Function} callback on each file with replacements:
-  #   * `options` {Object} with keys `filePath` and `replacements`
-  replace: (regex, replacementText, filePaths, iterator) ->
-    deferred = Q.defer()
-
-    openPaths = (buffer.getPath() for buffer in @getBuffers())
-    outOfProcessPaths = _.difference(filePaths, openPaths)
-
-    inProcessFinished = !openPaths.length
-    outOfProcessFinished = !outOfProcessPaths.length
-    checkFinished = ->
-      deferred.resolve() if outOfProcessFinished and inProcessFinished
-
-    unless outOfProcessFinished.length
-      flags = 'g'
-      flags += 'i' if regex.ignoreCase
-
-      task = Task.once require.resolve('./replace-handler'), outOfProcessPaths, regex.source, flags, replacementText, ->
-        outOfProcessFinished = true
-        checkFinished()
-
-      task.on 'replace:path-replaced', iterator
-      task.on 'replace:file-error', (error) -> iterator(null, error)
-
-    for buffer in @getBuffers()
-      continue unless buffer.getPath() in filePaths
-      replacements = buffer.replace(regex, replacementText, iterator)
-      iterator({filePath: buffer.getPath(), replacements}) if replacements
-
-    inProcessFinished = true
-    checkFinished()
-
-    deferred.promise
-
   buildEditorForBuffer: (buffer, editorOptions) ->
-    editor = new Editor(_.extend({buffer, registerEditor: true}, editorOptions))
+    editor = new TextEditor(_.extend({buffer, registerEditor: true}, editorOptions))
     editor
 
   eachBuffer: (args...) ->

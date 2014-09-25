@@ -14,6 +14,10 @@ describe "LanguageMode", ->
       waitsForPromise ->
         atom.packages.activatePackage('language-javascript')
 
+    afterEach ->
+      atom.packages.deactivatePackage('language-javascript')
+      atom.packages.unloadPackage('language-javascript')
+
     describe ".minIndentLevelForRowRange(startRow, endRow)", ->
       it "returns the minimum indent level for the given row range", ->
         expect(languageMode.minIndentLevelForRowRange(4, 7)).toBe 2
@@ -69,6 +73,28 @@ describe "LanguageMode", ->
         expect(languageMode.rowRangeForCodeFoldAtBufferRow(1)).toEqual [1, 9]
         expect(languageMode.rowRangeForCodeFoldAtBufferRow(2)).toBeNull()
         expect(languageMode.rowRangeForCodeFoldAtBufferRow(4)).toEqual [4, 7]
+
+    describe ".rowRangeForCommentAtBufferRow(bufferRow)", ->
+      it "returns the start/end rows of the foldable comment starting at the given row", ->
+        buffer.setText("//this is a multi line comment\n//another line")
+        expect(languageMode.rowRangeForCommentAtBufferRow(0)).toEqual [0, 1]
+        expect(languageMode.rowRangeForCommentAtBufferRow(1)).toEqual [0, 1]
+
+        buffer.setText("//this is a multi line comment\n//another line\n//and one more")
+        expect(languageMode.rowRangeForCommentAtBufferRow(0)).toEqual [0, 2]
+        expect(languageMode.rowRangeForCommentAtBufferRow(1)).toEqual [0, 2]
+
+        buffer.setText("//this is a multi line comment\n\n//with an empty line")
+        expect(languageMode.rowRangeForCommentAtBufferRow(0)).toBeUndefined()
+        expect(languageMode.rowRangeForCommentAtBufferRow(1)).toBeUndefined()
+        expect(languageMode.rowRangeForCommentAtBufferRow(2)).toBeUndefined()
+
+        buffer.setText("//this is a single line comment\n")
+        expect(languageMode.rowRangeForCommentAtBufferRow(0)).toBeUndefined()
+        expect(languageMode.rowRangeForCommentAtBufferRow(1)).toBeUndefined()
+
+        buffer.setText("//this is a single line comment")
+        expect(languageMode.rowRangeForCommentAtBufferRow(0)).toBeUndefined()
 
     describe "suggestedIndentForBufferRow", ->
       it "returns the suggested indentation based on auto-indent/outdent rules", ->
@@ -127,6 +153,10 @@ describe "LanguageMode", ->
       waitsForPromise ->
         atom.packages.activatePackage('language-coffee-script')
 
+    afterEach ->
+      atom.packages.deactivatePackage('language-coffee-script')
+      atom.packages.unloadPackage('language-coffee-script')
+
     describe ".toggleLineCommentsForBufferRows(start, end)", ->
       it "comments/uncomments lines in the given range", ->
         languageMode.toggleLineCommentsForBufferRows(4, 6)
@@ -178,6 +208,10 @@ describe "LanguageMode", ->
       waitsForPromise ->
         atom.packages.activatePackage('language-css')
 
+    afterEach ->
+      atom.packages.deactivatePackage('language-css')
+      atom.packages.unloadPackage('language-css')
+
     describe ".toggleLineCommentsForBufferRows(start, end)", ->
       it "comments/uncomments lines in the given range", ->
         languageMode.toggleLineCommentsForBufferRows(0, 1)
@@ -226,6 +260,13 @@ describe "LanguageMode", ->
       waitsForPromise ->
         atom.packages.activatePackage('language-css')
 
+    afterEach ->
+      atom.packages.deactivatePackage('language-less')
+      atom.packages.unloadPackage('language-less')
+
+      atom.packages.deactivatePackage('language-css')
+      atom.packages.unloadPackage('language-css')
+
     describe "when commenting lines", ->
       it "only uses the `commentEnd` pattern if it comes from the same grammar as the `commentStart`", ->
         languageMode.toggleLineCommentsForBufferRows(0, 0)
@@ -242,6 +283,10 @@ describe "LanguageMode", ->
       waitsForPromise ->
         atom.packages.activatePackage('language-xml')
 
+    afterEach ->
+      atom.packages.deactivatePackage('language-xml')
+      atom.packages.unloadPackage('language-xml')
+
     describe "when uncommenting lines", ->
       it "removes the leading whitespace from the comment end pattern match", ->
         languageMode.toggleLineCommentsForBufferRows(0, 0)
@@ -256,6 +301,10 @@ describe "LanguageMode", ->
 
       waitsForPromise ->
         atom.packages.activatePackage('language-javascript')
+
+    afterEach ->
+      atom.packages.deactivatePackage('language-javascript')
+      atom.packages.unloadPackage('language-javascript')
 
     it "maintains cursor buffer position when a folding/unfolding", ->
       editor.setCursorBufferPosition([5,5])
@@ -344,6 +393,10 @@ describe "LanguageMode", ->
       waitsForPromise ->
         atom.packages.activatePackage('language-javascript')
 
+    afterEach ->
+      atom.packages.deactivatePackage('language-javascript')
+      atom.packages.unloadPackage('language-javascript')
+
     describe ".unfoldAll()", ->
       it "unfolds every folded line", ->
         initialScreenLineCount = editor.getScreenLineCount()
@@ -412,6 +465,13 @@ describe "LanguageMode", ->
       waitsForPromise ->
         atom.packages.activatePackage('language-source')
         atom.packages.activatePackage('language-css')
+
+    afterEach ->
+      atom.packages.deactivatePackage('language-source')
+      atom.packages.unloadPackage('language-source')
+
+      atom.packages.deactivatePackage('language-css')
+      atom.packages.unloadPackage('language-css')
 
     describe "suggestedIndentForBufferRow", ->
       it "does not return negative values (regression)", ->

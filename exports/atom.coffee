@@ -1,9 +1,10 @@
 {Point, Range} = require 'text-buffer'
+{deprecate} = require 'grim'
 
 module.exports =
   BufferedNodeProcess: require '../src/buffered-node-process'
   BufferedProcess: require '../src/buffered-process'
-  Git: require '../src/git'
+  GitRepository: require '../src/git-repository'
   Point: Point
   Range: Range
 
@@ -15,7 +16,7 @@ unless process.env.ATOM_SHELL_INTERNAL_RUN_AS_NODE
   module.exports.$ = $
   module.exports.$$ = $$
   module.exports.$$$ = $$$
-  module.exports.EditorView = require '../src/editor-view'
+  module.exports.TextEditorView = require '../src/text-editor-view'
   module.exports.ScrollView = require '../src/scroll-view'
   module.exports.SelectListView = require '../src/select-list-view'
   module.exports.Task = require '../src/task'
@@ -24,3 +25,11 @@ unless process.env.ATOM_SHELL_INTERNAL_RUN_AS_NODE
   module.exports.Workspace = require '../src/workspace'
   module.exports.React = require 'react-atom-fork'
   module.exports.Reactionary = require 'reactionary-atom-fork'
+
+Object.defineProperty module.exports, 'Git', get: ->
+  deprecate "Please require `GitRepository` instead of `Git`: `{GitRepository} = require 'atom'`"
+  module.exports.GitRepository
+
+Object.defineProperty module.exports, 'EditorView', get: ->
+  deprecate "Please require `TextEditorView` instead of `EditorView`: `{TextEditorView} = require 'atom'`"
+  module.exports.TextEditorView

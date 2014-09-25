@@ -39,6 +39,7 @@ module.exports = (grunt) ->
   tmpDir = os.tmpdir()
   appName = if process.platform is 'darwin' then 'Atom.app' else 'Atom'
   buildDir = grunt.option('build-dir') ? path.join(tmpDir, 'atom-build')
+  buildDir = path.resolve(buildDir)
   installDir = grunt.option('install-dir')
 
   home = if process.platform is 'win32' then process.env.USERPROFILE else process.env.HOME
@@ -61,6 +62,8 @@ module.exports = (grunt) ->
     appDir = path.join(shellAppDir, 'resources', 'app')
     installDir ?= process.env.INSTALL_PREFIX ? '/usr/local'
     killCommand ='pkill -9 atom'
+
+  installDir = path.resolve(installDir)
 
   coffeeConfig =
     glob_to_multiple:
@@ -229,10 +232,12 @@ module.exports = (grunt) ->
 
   ciTasks = ['output-disk-space', 'download-atom-shell', 'build']
   ciTasks.push('dump-symbols') if process.platform isnt 'win32'
-  ciTasks.push('mkdeb') if process.platform is 'linux'
   ciTasks.push('set-version', 'check-licenses', 'lint')
+  ciTasks.push('mkdeb') if process.platform is 'linux'
   ciTasks.push('test') if process.platform isnt 'linux'
-  ciTasks.push('codesign', 'publish-build')
+  ciTasks.push('codesign')
+  ciTasks.push('create-installer') if process.platform is 'win32'
+  ciTasks.push('publish-build')
   grunt.registerTask('ci', ciTasks)
 
   defaultTasks = ['download-atom-shell', 'build', 'set-version']
