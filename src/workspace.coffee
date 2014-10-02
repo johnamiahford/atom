@@ -5,7 +5,8 @@ _ = require 'underscore-plus'
 Q = require 'q'
 Serializable = require 'serializable'
 Delegator = require 'delegato'
-{Emitter} = require 'event-kit'
+{Emitter, Disposable} = require 'event-kit'
+Grim = require 'grim'
 TextEditor = require './text-editor'
 PaneContainer = require './pane-container'
 Pane = require './pane'
@@ -43,7 +44,7 @@ class Workspace extends Model
     @paneContainer ?= new PaneContainer({@viewRegistry})
     @paneContainer.onDidDestroyPaneItem(@onPaneItemDestroyed)
 
-    @registerOpener (filePath) =>
+    @addOpener (filePath) =>
       switch filePath
         when 'atom://.atom/stylesheet'
           @open(atom.themes.getUserStylesheetPath())
@@ -348,8 +349,6 @@ class Workspace extends Model
     if uri = @destroyedItemUris.pop()
       @openSync(uri)
 
-  # TODO: make ::registerOpener() return a disposable
-
   # Public: Register an opener for a uri.
   #
   # An {TextEditor} will be used if no openers return a value.
@@ -357,17 +356,24 @@ class Workspace extends Model
   # ## Examples
   #
   # ```coffee
-  # atom.project.registerOpener (uri) ->
+  # atom.project.addOpener (uri) ->
   #   if path.extname(uri) is '.toml'
   #     return new TomlEditor(uri)
   # ```
   #
   # * `opener` A {Function} to be called when a path is being opened.
-  registerOpener: (opener) ->
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to remove the
+  # opener.
+  addOpener: (opener) ->
     @openers.push(opener)
+    new Disposable => _.remove(@openers, opener)
+  registerOpener: (opener) ->
+    Grim.deprecate("Call Workspace::addOpener instead")
+    @addOpener(opener)
 
-  # Unregister an opener registered with {::registerOpener}.
   unregisterOpener: (opener) ->
+    Grim.deprecate("Call .dispose() on the Disposable returned from ::addOpener instead")
     _.remove(@openers, opener)
 
   getOpeners: ->

@@ -6,7 +6,6 @@ Delegator = require 'delegato'
 {deprecate, logDeprecationWarnings} = require 'grim'
 scrollbarStyle = require 'scrollbar-style'
 {$, $$, View} = require './space-pen-extensions'
-fs = require 'fs-plus'
 Workspace = require './workspace'
 CommandInstaller = require './command-installer'
 PaneView = require './pane-view'
@@ -67,15 +66,6 @@ class WorkspaceView extends View
 
   @version: 4
 
-  @configDefaults:
-    ignoredNames: [".git", ".hg", ".svn", ".DS_Store", "Thumbs.db"]
-    excludeVcsIgnoredPaths: true
-    disabledPackages: []
-    themes: ['atom-dark-ui', 'atom-dark-syntax']
-    projectHome: path.join(fs.getHomeDirectory(), 'github')
-    audioBeep: true
-    destroyEmptyPanes: true
-
   @content: ->
     @div class: 'workspace', tabindex: -1, =>
       @div class: 'horizontal', outlet: 'horizontal', =>
@@ -112,7 +102,7 @@ class WorkspaceView extends View
     @subscribe $(window), 'focus', (e) =>
       @handleFocus(e) if document.activeElement is document.body
 
-    atom.project.on 'path-changed', => @updateTitle()
+    atom.project.onDidChangePaths => @updateTitle()
     @on 'pane-container:active-pane-item-changed', => @updateTitle()
     @on 'pane:active-item-title-changed', '.active.pane', => @updateTitle()
     @on 'pane:active-item-modified-status-changed', '.active.pane', => @updateDocumentEdited()
@@ -146,7 +136,7 @@ class WorkspaceView extends View
     if process.platform is 'darwin'
       @command 'window:install-shell-commands', => @installShellCommands()
 
-    @command 'window:run-package-specs', -> ipc.send('run-package-specs', path.join(atom.project.getPath(), 'spec'))
+    @command 'window:run-package-specs', -> ipc.send('run-package-specs', path.join(atom.project.getPaths()[0], 'spec'))
 
     @command 'window:focus-next-pane', => @focusNextPaneView()
     @command 'window:focus-previous-pane', => @focusPreviousPaneView()
@@ -155,11 +145,11 @@ class WorkspaceView extends View
     @command 'window:focus-pane-on-left', => @focusPaneViewOnLeft()
     @command 'window:focus-pane-on-right', => @focusPaneViewOnRight()
     @command 'window:save-all', => @saveAll()
-    @command 'window:toggle-invisibles', -> atom.config.toggle("editor.showInvisibles")
+    @command 'window:toggle-invisibles', -> atom.config.set("editor.showInvisibles", not atom.config.get("editor.showInvisibles"))
     @command 'window:log-deprecation-warnings', -> logDeprecationWarnings()
 
     @command 'window:toggle-auto-indent', ->
-      atom.config.toggle("editor.autoIndent")
+      atom.config.set("editor.autoIndent", not atom.config.get("editor.autoIndent"))
 
     @command 'pane:reopen-closed-item', => @getModel().reopenItem()
 
@@ -377,7 +367,7 @@ class WorkspaceView extends View
   # Updates the application's title and proxy icon based on whichever file is
   # open.
   updateTitle: ->
-    if projectPath = atom.project.getPath()
+    if projectPath = atom.project.getPaths()[0]
       if item = @getModel().getActivePaneItem()
         title = "#{item.getTitle?() ? 'untitled'} - #{projectPath}"
         @setTitle(title, item.getPath?())

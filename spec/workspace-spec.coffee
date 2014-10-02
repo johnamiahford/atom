@@ -5,7 +5,7 @@ describe "Workspace", ->
   workspace = null
 
   beforeEach ->
-    atom.project.setPath(atom.project.resolve('dir'))
+    atom.project.setPaths([atom.project.resolve('dir')])
     atom.workspace = workspace = new Workspace
 
   describe "::open(uri, options)", ->
@@ -220,8 +220,8 @@ describe "Workspace", ->
       it "returns the resource returned by the custom opener", ->
         fooOpener = (pathToOpen, options) -> { foo: pathToOpen, options } if pathToOpen?.match(/\.foo/)
         barOpener = (pathToOpen) -> { bar: pathToOpen } if pathToOpen?.match(/^bar:\/\//)
-        workspace.registerOpener(fooOpener)
-        workspace.registerOpener(barOpener)
+        workspace.addOpener(fooOpener)
+        workspace.addOpener(barOpener)
 
         waitsForPromise ->
           pathToOpen = atom.project.resolve('a.foo')
