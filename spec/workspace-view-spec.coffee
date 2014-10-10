@@ -82,10 +82,10 @@ describe "WorkspaceView", ->
           simulateReload()
 
           expect(atom.workspaceView.getEditorViews().length).toBe 4
-          editorView1 = atom.workspaceView.panes.find('.pane-row > .pane .editor:eq(0)').view()
-          editorView3 = atom.workspaceView.panes.find('.pane-row > .pane .editor:eq(1)').view()
-          editorView2 = atom.workspaceView.panes.find('.pane-row > .pane-column > .pane .editor:eq(0)').view()
-          editorView4 = atom.workspaceView.panes.find('.pane-row > .pane-column > .pane .editor:eq(1)').view()
+          editorView1 = atom.workspaceView.panes.find('atom-pane-axis.horizontal > atom-pane atom-text-editor:eq(0)').view()
+          editorView3 = atom.workspaceView.panes.find('atom-pane-axis.horizontal > atom-pane atom-text-editor:eq(1)').view()
+          editorView2 = atom.workspaceView.panes.find('atom-pane-axis.horizontal > atom-pane-axis.vertical > atom-pane atom-text-editor:eq(0)').view()
+          editorView4 = atom.workspaceView.panes.find('atom-pane-axis.horizontal > atom-pane-axis.vertical > atom-pane atom-text-editor:eq(1)').view()
 
           expect(editorView1.getEditor().getPath()).toBe atom.project.resolve('a')
           expect(editorView2.getEditor().getPath()).toBe atom.project.resolve('b')
@@ -127,15 +127,11 @@ describe "WorkspaceView", ->
       expect(activePane).toHaveFocus()
 
   describe "keymap wiring", ->
-    commandHandler = null
-    beforeEach ->
-      commandHandler = jasmine.createSpy('commandHandler')
-      atom.workspaceView.on('foo-command', commandHandler)
-
-      atom.keymaps.add('name', '*': {'x': 'foo-command'})
-
     describe "when a keydown event is triggered in the WorkspaceView", ->
       it "triggers matching keybindings for that event", ->
+        commandHandler = jasmine.createSpy('commandHandler')
+        atom.workspaceView.on('foo-command', commandHandler)
+        atom.keymaps.add('name', '*': {'x': 'foo-command'})
         event = keydownEvent 'x', target: atom.workspaceView[0]
 
         atom.workspaceView.trigger(event)
@@ -252,8 +248,8 @@ describe "WorkspaceView", ->
 
     beforeEach ->
       atom.workspaceView.attachToDom()
-      editorNode = atom.workspaceView.find('.editor')[0]
-      editor = atom.workspaceView.find('.editor').view().getEditor()
+      editorNode = atom.workspaceView.find('atom-text-editor')[0]
+      editor = atom.workspaceView.find('atom-text-editor').view().getEditor()
 
     it "updates the font-size based on the 'editor.fontSize' config value", ->
       initialCharWidth = editor.getDefaultCharWidth()
