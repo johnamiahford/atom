@@ -337,7 +337,7 @@ class Config
   #
   # * `scopeDescriptor` (optional) {Array} of {String}s describing a path from
   #   the root of the syntax tree to a token. Get one by calling
-  #   {TextEditor::scopesAtCursor}. See {::get} for examples.
+  #   {editor.getLastCursor().getScopeDescriptor()}. See {::get} for examples.
   # * `keyPath` {String} name of the key to observe
   # * `callback` {Function} to call when the value of the key changes.
   #   * `value` the new value of the key
@@ -373,7 +373,7 @@ class Config
   #
   # * `scopeDescriptor` (optional) {Array} of {String}s describing a path from
   #   the root of the syntax tree to a token. Get one by calling
-  #   {TextEditor::scopesAtCursor}. See {::get} for examples.
+  #   {editor.getLastCursor().getScopeDescriptor()}. See {::get} for examples.
   # * `keyPath` (optional) {String} name of the key to observe. Must be
   #   specified if `scopeDescriptor` is specified.
   # * `callback` {Function} to call when the value of the key changes.
@@ -425,30 +425,37 @@ class Config
   # atom.config.get(['source.ruby'], 'editor.tabLength') # => 2
   # ```
   #
+  # You can get the language scope descriptor via
+  # {TextEditor::getRootScopeDescriptor}. This will get the setting specifically
+  # for the editor's language.
+  #
+  # ```coffee
+  # atom.config.get(@editor.getRootScopeDescriptor(), 'editor.tabLength') # => 2
+  # ```
+  #
   # Additionally, you can get the setting at the specific cursor position.
   #
   # ```coffee
-  # scopeDescriptor = @editor.scopesAtCursor()
+  # scopeDescriptor = @editor.getLastCursor().getScopeDescriptor()
   # atom.config.get(scopeDescriptor, 'editor.tabLength') # => 2
   # ```
   #
   # * `scopeDescriptor` (optional) {Array} of {String}s describing a path from
   #   the root of the syntax tree to a token. Get one by calling
-  #   {TextEditor::scopesAtCursor}
+  #   {editor.getLastCursor().getScopeDescriptor()}
   # * `keyPath` The {String} name of the key to retrieve.
   #
   # Returns the value from Atom's default settings, the user's configuration
   # file in the type specified by the configuration schema.
   get: (scopeDescriptor, keyPath) ->
     if arguments.length == 1
-      keyPath = scopeDescriptor
-      scopeDescriptor = undefined
-
-    if scopeDescriptor?
+      # cannot assign to keyPath for the sake of v8 optimization
+      globalKeyPath = scopeDescriptor
+      @getRawValue(globalKeyPath)
+    else
       value = @getRawScopedValue(scopeDescriptor, keyPath)
-      return value if value?
-
-    @getRawValue(keyPath)
+      value ?= @getRawValue(keyPath)
+      value
 
   # Essential: Sets the value for a configuration setting.
   #
@@ -679,8 +686,8 @@ class Config
     @watchSubscription = null
 
   save: ->
-    allSettings = @scopedSettingsStore.propertiesForSource('user-config')
-    allSettings.global = @settings
+    allSettings = global: @settings
+    allSettings = _.extend allSettings, @scopedSettingsStore.propertiesForSource('user-config')
     CSON.writeFileSync(@configFilePath, allSettings)
 
   ###
@@ -748,12 +755,18 @@ class Config
 
   observeKeyPath: (keyPath, options, callback) ->
     callback(_.clone(@get(keyPath))) unless options.callNow == false
-    @emitter.on 'did-change', (event) ->
-      callback(event.newValue) if keyPath? and keyPath.indexOf(event?.keyPath) is 0
+    @emitter.on 'did-change', (event) =>
+      callback(event.newValue) if keyPath? and @isSubKeyPath(keyPath, event?.keyPath)
 
   onDidChangeKeyPath: (keyPath, callback) ->
-    @emitter.on 'did-change', (event) ->
-      callback(event) if not keyPath? or (keyPath? and keyPath.indexOf(event?.keyPath) is 0)
+    @emitter.on 'did-change', (event) =>
+      callback(event) if not keyPath? or (keyPath? and @isSubKeyPath(keyPath, event?.keyPath))
+
+  isSubKeyPath: (keyPath, subKeyPath) ->
+    return false unless keyPath? and subKeyPath?
+    pathSubTokens = subKeyPath.split('.')
+    pathTokens = keyPath.split('.').slice(0, pathSubTokens.length)
+    _.isEqual(pathTokens, pathSubTokens)
 
   setRawDefault: (keyPath, value) ->
     oldValue = _.clone(@get(keyPath))
