@@ -10,6 +10,7 @@ Q = require 'q'
 {deprecate} = require 'grim'
 
 $ = null # Defer require in case this is in the window-less browser process
+ModuleCache = require './module-cache'
 ScopedProperties = require './scoped-properties'
 
 # Loads and activates a package's main module and resources such as
@@ -47,6 +48,7 @@ class Package
     @emitter = new Emitter
     @metadata ?= Package.loadMetadata(@path)
     @name = @metadata?.name ? path.basename(@path)
+    ModuleCache.add(@path, @metadata)
     @reset()
 
   ###
@@ -336,8 +338,10 @@ class Package
     for selector, commands of @getActivationCommands()
       for command in commands
         do (selector, command) =>
-          atom.commands.commandRegistered(command)
-          @activationCommandSubscriptions.add(atom.commands.onWillDispatch (event) =>
+          # Add dummy command so it appears in menu.
+          # The real command will be registered on package activation
+          @activationCommandSubscriptions.add atom.commands.add selector, command, ->
+          @activationCommandSubscriptions.add atom.commands.onWillDispatch (event) =>
             return unless event.type is command
             currentTarget = event.target
             while currentTarget
@@ -346,7 +350,6 @@ class Package
                 @activateNow()
                 break
               currentTarget = currentTarget.parentElement
-          )
 
   getActivationCommands: ->
     return @activationCommands if @activationCommands?

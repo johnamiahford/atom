@@ -14,6 +14,7 @@ fs = require 'fs-plus'
 
 {$} = require './space-pen-extensions'
 WindowEventHandler = require './window-event-handler'
+StylesElement = require './styles-element'
 
 # Essential: Atom global for dealing with packages, themes, menus, and the window.
 #
@@ -29,7 +30,10 @@ class Atom extends Model
   #
   # Returns an Atom instance, fully initialized
   @loadOrCreate: (mode) ->
-    @deserialize(@loadState(mode)) ? new this({mode, @version})
+    startTime = Date.now()
+    atom = @deserialize(@loadState(mode)) ? new this({mode, @version})
+    atom.deserializeTimings.atom = Date.now() -  startTime
+    atom
 
   # Deserializes the Atom environment from a state object
   @deserialize: (state) ->
@@ -152,6 +156,7 @@ class Atom extends Model
     {@mode} = @state
     DeserializerManager = require './deserializer-manager'
     @deserializers = new DeserializerManager()
+    @deserializeTimings = {}
 
   # Sets up the basic services that should be available in all modes
   # (both spec and application).
@@ -182,6 +187,7 @@ class Atom extends Model
     Clipboard = require './clipboard'
     Syntax = require './syntax'
     ThemeManager = require './theme-manager'
+    StyleManager = require './style-manager'
     ContextMenuManager = require './context-menu-manager'
     MenuManager = require './menu-manager'
     {devMode, safeMode, resourcePath} = @getLoadSettings()
@@ -201,6 +207,8 @@ class Atom extends Model
     @keymap = @keymaps # Deprecated
     @commands = new CommandRegistry
     @packages = new PackageManager({devMode, configDirPath, resourcePath, safeMode})
+    @styles = new StyleManager
+    document.head.appendChild(new StylesElement)
     @themes = new ThemeManager({packageManager: @packages, configDirPath, resourcePath, safeMode})
     @contextMenu = new ContextMenuManager({resourcePath, devMode})
     @menu = new MenuManager({resourcePath})
@@ -597,7 +605,6 @@ class Atom extends Model
     delete @state.packageStates
 
   deserializeEditorWindow: ->
-    @deserializeTimings = {}
     @deserializePackageStates()
     @deserializeProject()
     @deserializeWorkspaceView()

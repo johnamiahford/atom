@@ -338,6 +338,8 @@ class Config
   # * `scopeDescriptor` (optional) {Array} of {String}s describing a path from
   #   the root of the syntax tree to a token. Get one by calling
   #   {editor.getLastCursor().getScopeDescriptor()}. See {::get} for examples.
+  #   See [the scopes docs](https://atom.io/docs/latest/advanced/scopes-and-scope-descriptors)
+  #   for more information.
   # * `keyPath` {String} name of the key to observe
   # * `callback` {Function} to call when the value of the key changes.
   #   * `value` the new value of the key
@@ -374,6 +376,8 @@ class Config
   # * `scopeDescriptor` (optional) {Array} of {String}s describing a path from
   #   the root of the syntax tree to a token. Get one by calling
   #   {editor.getLastCursor().getScopeDescriptor()}. See {::get} for examples.
+  #   See [the scopes docs](https://atom.io/docs/latest/advanced/scopes-and-scope-descriptors)
+  #   for more information.
   # * `keyPath` (optional) {String} name of the key to observe. Must be
   #   specified if `scopeDescriptor` is specified.
   # * `callback` {Function} to call when the value of the key changes.
@@ -443,6 +447,8 @@ class Config
   # * `scopeDescriptor` (optional) {Array} of {String}s describing a path from
   #   the root of the syntax tree to a token. Get one by calling
   #   {editor.getLastCursor().getScopeDescriptor()}
+  #   See [the scopes docs](https://atom.io/docs/latest/advanced/scopes-and-scope-descriptors)
+  #   for more information.
   # * `keyPath` The {String} name of the key to retrieve.
   #
   # Returns the value from Atom's default settings, the user's configuration
@@ -486,7 +492,9 @@ class Config
   # atom.config.get(['source.js'], 'editor.tabLength') # => 4
   # ```
   #
-  # * `scope` (optional) {String}. eg. '.source.ruby'
+  # * `scopeSelector` (optional) {String}. eg. '.source.ruby'
+  #   See [the scopes docs](https://atom.io/docs/latest/advanced/scopes-and-scope-descriptors)
+  #   for more information.
   # * `keyPath` The {String} name of the key.
   # * `value` The value of the setting. Passing `undefined` will revert the
   #   setting to the default value.
@@ -494,11 +502,11 @@ class Config
   # Returns a {Boolean}
   # * `true` if the value was set.
   # * `false` if the value was not able to be coerced to the type specified in the setting's schema.
-  set: (scope, keyPath, value) ->
+  set: (scopeSelector, keyPath, value) ->
     if arguments.length < 3
       value = keyPath
-      keyPath = scope
-      scope = undefined
+      keyPath = scopeSelector
+      scopeSelector = undefined
 
     unless value == undefined
       try
@@ -506,8 +514,8 @@ class Config
       catch e
         return false
 
-    if scope?
-      @setRawScopedValue(scope, keyPath, value)
+    if scopeSelector?
+      @setRawScopedValue(scopeSelector, keyPath, value)
     else
       @setRawValue(keyPath, value)
 
@@ -519,29 +527,58 @@ class Config
   # * `keyPath` The {String} name of the key.
   #
   # Returns the new value.
-  restoreDefault: (keyPath) ->
-    @set(keyPath, _.valueForKeyPath(@defaultSettings, keyPath))
-    @get(keyPath)
+  restoreDefault: (scopeSelector, keyPath) ->
+    if arguments.length == 1
+      keyPath = scopeSelector
+      scopeSelector = null
+
+    if scopeSelector?
+      settings = @scopedSettingsStore.propertiesForSourceAndSelector('user-config', scopeSelector)
+      @scopedSettingsStore.removePropertiesForSourceAndSelector('user-config', scopeSelector)
+      _.setValueForKeyPath(settings, keyPath, undefined)
+      @addScopedSettings('user-config', scopeSelector, settings)
+      @getDefault(scopeSelector, keyPath)
+    else
+      @set(keyPath, _.valueForKeyPath(@defaultSettings, keyPath))
+      @get(keyPath)
 
   # Extended: Get the global default value of the key path. _Please note_ that in most
   # cases calling this is not necessary! {::get} returns the default value when
   # a custom value is not specified.
   #
+  # * `scopeSelector` (optional) {String}. eg. '.source.ruby'
   # * `keyPath` The {String} name of the key.
   #
   # Returns the default value.
-  getDefault: (keyPath) ->
-    defaultValue = _.valueForKeyPath(@defaultSettings, keyPath)
+  getDefault: (scopeSelector, keyPath) ->
+    if arguments.length == 1
+      keyPath = scopeSelector
+      scopeSelector = null
+
+    if scopeSelector?
+      defaultValue = @scopedSettingsStore.getPropertyValue(scopeSelector, keyPath, excludeSources: ['user-config'])
+      defaultValue ?= _.valueForKeyPath(@defaultSettings, keyPath)
+    else
+      defaultValue = _.valueForKeyPath(@defaultSettings, keyPath)
     _.deepClone(defaultValue)
 
   # Extended: Is the value at `keyPath` its default value?
   #
+  # * `scopeSelector` (optional) {String}. eg. '.source.ruby'
   # * `keyPath` The {String} name of the key.
   #
   # Returns a {Boolean}, `true` if the current value is the default, `false`
   # otherwise.
-  isDefault: (keyPath) ->
-    not _.valueForKeyPath(@settings, keyPath)?
+  isDefault: (scopeSelector, keyPath) ->
+    if arguments.length == 1
+      keyPath = scopeSelector
+      scopeSelector = null
+
+    if scopeSelector?
+      settings = @scopedSettingsStore.propertiesForSourceAndSelector('user-config', scopeSelector)
+      not _.valueForKeyPath(settings, keyPath)?
+    else
+      not _.valueForKeyPath(@settings, keyPath)?
 
   # Extended: Retrieve the schema for a specific key path. The schema will tell
   # you what type the keyPath expects, and other metadata about the config
@@ -560,9 +597,17 @@ class Config
     schema
 
   # Extended: Returns a new {Object} containing all of the global settings and
-  # defaults. This does not include scoped settings.
-  getSettings: ->
-    _.deepExtend(@settings, @defaultSettings)
+  # defaults. Returns the scoped settings when a `scopeSelector` is specified.
+  #
+  # * `scopeSelector` (optional) {String}. eg. '.source.ruby'
+  getSettings: (scopeSelector) ->
+    settings = _.deepExtend(@settings, @defaultSettings)
+
+    if scopeSelector?
+      scopedSettings = @scopedSettingsStore.propertiesForSelector(scopeSelector)
+      settings = _.deepExtend(scopedSettings, settings)
+
+    settings
 
   # Extended: Get the {String} path to the config file being used.
   getUserConfigPath: ->
@@ -810,10 +855,10 @@ class Config
     @usersScopedSettings.add @scopedSettingsStore.addProperties('user-config', newScopedSettings)
     @emitter.emit 'did-change'
 
-  addScopedSettings: (name, selector, value) ->
+  addScopedSettings: (source, selector, value) ->
     settingsBySelector = {}
     settingsBySelector[selector] = value
-    disposable = @scopedSettingsStore.addProperties(name, settingsBySelector)
+    disposable = @scopedSettingsStore.addProperties(source, settingsBySelector)
     @emitter.emit 'did-change'
     new Disposable =>
       disposable.dispose()
@@ -831,11 +876,7 @@ class Config
     @emitter.emit 'did-change'
 
   getRawScopedValue: (scopeDescriptor, keyPath) ->
-    scopeChain = scopeDescriptor
-      .map (scope) ->
-        scope = ".#{scope}" unless scope[0] is '.'
-        scope
-      .join(' ')
+    scopeChain = @scopeChainForScopeDescriptor(scopeDescriptor)
     @scopedSettingsStore.getPropertyValue(scopeChain, keyPath)
 
   observeScopedKeyPath: (scopeDescriptor, keyPath, callback) ->
@@ -869,6 +910,13 @@ class Config
         scope
       .join(' ')
     @scopedSettingsStore.getProperties(scopeChain, keyPath)
+
+  scopeChainForScopeDescriptor: (scopeDescriptor) ->
+    scopeDescriptor
+      .map (scope) ->
+        scope = ".#{scope}" unless scope[0] is '.'
+        scope
+      .join(' ')
 
 # Base schema enforcers. These will coerce raw input into the specified type,
 # and will throw an error when the value cannot be coerced. Throwing the error
