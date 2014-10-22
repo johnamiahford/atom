@@ -122,6 +122,11 @@ describe "Config", ->
         atom.config.set('.source.coffee', 'foo.bar.baz', 55)
         expect(atom.config.isDefault('.source.coffee', 'foo.bar.baz')).toBe false
 
+  describe ".setDefaults(keyPath)", ->
+    it "sets a default when the setting's key contains an escaped dot", ->
+      atom.config.setDefaults("foo", 'a\\.b': 1, b: 2)
+      expect(atom.config.get("foo")).toEqual 'a\\.b': 1, b: 2
+
   describe ".toggle(keyPath)", ->
     it "negates the boolean value of the current key path value", ->
       atom.config.set('foo.a', 1)
@@ -153,6 +158,14 @@ describe "Config", ->
       atom.config.restoreDefault('a.c')
       expect(atom.config.get('a.c')).toBeUndefined()
 
+    it "calls ::save()", ->
+      atom.config.setDefaults('a', b: 3)
+      atom.config.set('a.b', 4)
+      atom.config.save.reset()
+
+      atom.config.restoreDefault('a.c')
+      expect(atom.config.save.callCount).toBe 1
+
     describe "when scoped settings are used", ->
       it "restores the global default when no scoped default set", ->
         atom.config.setDefaults("foo", bar: baz: 10)
@@ -172,6 +185,15 @@ describe "Config", ->
         atom.config.restoreDefault('.source.coffee', 'foo.bar.baz')
         expect(atom.config.get(['.source.coffee'], 'foo.bar.baz')).toBe 42
         expect(atom.config.get(['.source.coffee'], 'foo.bar.ok')).toBe 100
+
+      it "calls ::save()", ->
+        atom.config.setDefaults("foo", bar: baz: 10)
+        atom.config.addScopedSettings("default", ".source.coffee", foo: bar: baz: 42)
+        atom.config.set('.source.coffee', 'foo.bar.baz', 55)
+        atom.config.save.reset()
+
+        atom.config.restoreDefault('.source.coffee', 'foo.bar.baz')
+        expect(atom.config.save.callCount).toBe 1
 
   describe ".getSettings()", ->
     it "returns all settings including defaults", ->
@@ -195,7 +217,6 @@ describe "Config", ->
           bar:
             baz: 42
             omg: 'omg'
-
 
   describe ".pushAtKeyPath(keyPath, value)", ->
     it "pushes the given value to the array at the key path and updates observers", ->
@@ -1014,6 +1035,21 @@ describe "Config", ->
 
         expect(atom.config.set('foo.bar.arr', ['two', 'three'])).toBe true
         expect(atom.config.get('foo.bar.arr')).toEqual ['two', 'three']
+
+    describe "when scoped settings are used", ->
+      beforeEach ->
+        schema =
+          type: 'string'
+          default: 'ok'
+          scopes:
+            '.source.js':
+              default: 'omg'
+        atom.config.setSchema('foo.bar.str', schema)
+
+      it 'it respects the scoped defaults', ->
+        expect(atom.config.get('foo.bar.str')).toBe 'ok'
+        expect(atom.config.get(['.source.js'], 'foo.bar.str')).toBe 'omg'
+        expect(atom.config.get(['.source.coffee'], 'foo.bar.str')).toBe 'ok'
 
   describe "scoped settings", ->
     describe ".get(scopeDescriptor, keyPath)", ->

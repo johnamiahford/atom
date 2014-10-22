@@ -20,9 +20,9 @@ module.exports = (gruntObject) ->
   {cp} = require('./task-helpers')(grunt)
 
   grunt.registerTask 'publish-build', 'Publish the built app', ->
-    return if process.env.JANKY_SHA1 and process.env.JANKY_BRANCH isnt 'master'
-    tasks = ['upload-assets']
-    tasks.unshift('build-docs', 'prepare-docs') if process.platform is 'darwin'
+    tasks = []
+    tasks.push('build-docs', 'prepare-docs') if process.platform is 'darwin'
+    tasks.push('upload-assets') if process.env.JANKY_SHA1 and process.env.JANKY_BRANCH is 'master'
     grunt.task.run(tasks)
 
   grunt.registerTask 'prepare-docs', 'Move api.json to atom-api.json', ->
@@ -31,7 +31,13 @@ module.exports = (gruntObject) ->
     cp path.join(docsOutputDir, 'api.json'), path.join(buildDir, 'atom-api.json')
 
   grunt.registerTask 'upload-assets', 'Upload the assets to a GitHub release', ->
-    done = @async()
+    doneCallback = @async()
+    startTime = Date.now()
+    done = (args...) ->
+      elapsedTime = Math.round((Date.now() - startTime) / 100) / 10
+      grunt.log.ok("Upload time: #{elapsedTime}s")
+      doneCallback(args...)
+
     buildDir = grunt.config.get('atom.buildDir')
     assets = getAssets()
 

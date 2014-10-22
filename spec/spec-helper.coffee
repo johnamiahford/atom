@@ -45,8 +45,7 @@ Object.defineProperty document, 'title',
 
 jasmine.getEnv().addEqualityTester(_.isEqual) # Use underscore's definition of equality for toEqual assertions
 
-if process.platform is 'win32' and process.env.JANKY_SHA1
-  # Use longer timeout on Windows CI
+if process.env.JANKY_SHA1 and process.platform is 'win32'
   jasmine.getEnv().defaultTimeoutInterval = 60000
 else
   jasmine.getEnv().defaultTimeoutInterval = 5000
@@ -226,7 +225,7 @@ addCustomMatchers = (spec) ->
       notText = if @isNot then " not" else ""
       element = @actual
       element = element.get(0) if element.jquery
-      @message = -> return "Expected element '#{element}' or its descendants #{notText} to show."
+      @message = -> return "Expected element '#{element}' or its descendants#{notText} to show."
       element.style.display in ['block', 'inline-block', 'static', 'fixed']
 
 window.keyIdentifierForKey = (key) ->

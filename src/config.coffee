@@ -9,6 +9,7 @@ pathWatcher = require 'pathwatcher'
 {deprecate} = require 'grim'
 
 ScopedPropertyStore = require 'scoped-property-store'
+ScopeDescriptor = require './scope-descriptor'
 
 # Essential: Used to access all of Atom's configuration details.
 #
@@ -335,7 +336,7 @@ class Config
   #   # do stuff with value
   # ```
   #
-  # * `scopeDescriptor` (optional) {Array} of {String}s describing a path from
+  # * `scopeDescriptor` (optional) {ScopeDescriptor} describing a path from
   #   the root of the syntax tree to a token. Get one by calling
   #   {editor.getLastCursor().getScopeDescriptor()}. See {::get} for examples.
   #   See [the scopes docs](https://atom.io/docs/latest/advanced/scopes-and-scope-descriptors)
@@ -351,7 +352,7 @@ class Config
     if args.length is 2
       # observe(keyPath, callback)
       [keyPath, callback, scopeDescriptor, options] = args
-    else if args.length is 3 and Array.isArray(scopeDescriptor)
+    else if args.length is 3 and (Array.isArray(scopeDescriptor) or scopeDescriptor instanceof ScopeDescriptor)
       # observe(scopeDescriptor, keyPath, callback)
       [scopeDescriptor, keyPath, callback, options] = args
     else if args.length is 3 and _.isString(scopeDescriptor) and _.isObject(keyPath)
@@ -373,7 +374,7 @@ class Config
   # Essential: Add a listener for changes to a given key path. If `keyPath` is
   # not specified, your callback will be called on changes to any key.
   #
-  # * `scopeDescriptor` (optional) {Array} of {String}s describing a path from
+  # * `scopeDescriptor` (optional) {ScopeDescriptor} describing a path from
   #   the root of the syntax tree to a token. Get one by calling
   #   {editor.getLastCursor().getScopeDescriptor()}. See {::get} for examples.
   #   See [the scopes docs](https://atom.io/docs/latest/advanced/scopes-and-scope-descriptors)
@@ -444,7 +445,7 @@ class Config
   # atom.config.get(scopeDescriptor, 'editor.tabLength') # => 2
   # ```
   #
-  # * `scopeDescriptor` (optional) {Array} of {String}s describing a path from
+  # * `scopeDescriptor` (optional) {ScopeDescriptor} describing a path from
   #   the root of the syntax tree to a token. Get one by calling
   #   {editor.getLastCursor().getScopeDescriptor()}
   #   See [the scopes docs](https://atom.io/docs/latest/advanced/scopes-and-scope-descriptors)
@@ -537,6 +538,7 @@ class Config
       @scopedSettingsStore.removePropertiesForSourceAndSelector('user-config', scopeSelector)
       _.setValueForKeyPath(settings, keyPath, undefined)
       @addScopedSettings('user-config', scopeSelector, settings)
+      @save() unless @configFileHasErrors
       @getDefault(scopeSelector, keyPath)
     else
       @set(keyPath, _.valueForKeyPath(@defaultSettings, keyPath))
@@ -589,7 +591,7 @@ class Config
   # Returns an {Object} eg. `{type: 'integer', default: 23, minimum: 1}`.
   # Returns `null` when the keyPath has no schema specified.
   getSchema: (keyPath) ->
-    keys = keyPath.split('.')
+    keys = splitKeyPath(keyPath)
     schema = @schema
     for key in keys
       break unless schema?
@@ -669,7 +671,7 @@ class Config
 
     rootSchema = @schema
     if keyPath
-      for key in keyPath.split('.')
+      for key in splitKeyPath(keyPath)
         rootSchema.type = 'object'
         rootSchema.properties ?= {}
         properties = rootSchema.properties
@@ -678,6 +680,7 @@ class Config
 
     _.extend rootSchema, schema
     @setDefaults(keyPath, @extractDefaultsFromSchema(schema))
+    @setScopedDefaultsFromSchema(keyPath, schema)
 
   load: ->
     @initializeConfigDirectory()
@@ -753,7 +756,7 @@ class Config
 
     unsetUnspecifiedValues = (keyPath, value) =>
       if isPlainObject(value)
-        keys = if keyPath? then keyPath.split('.') else []
+        keys = splitKeyPath(keyPath)
         for key, childValue of value
           continue unless value.hasOwnProperty(key)
           unsetUnspecifiedValues(keys.concat([key]).join('.'), childValue)
@@ -766,7 +769,7 @@ class Config
 
   setRecursive: (keyPath, value) ->
     if isPlainObject(value)
-      keys = if keyPath? then keyPath.split('.') else []
+      keys = splitKeyPath(keyPath)
       for key, childValue of value
         continue unless value.hasOwnProperty(key)
         @setRecursive(keys.concat([key]).join('.'), childValue)
@@ -809,8 +812,8 @@ class Config
 
   isSubKeyPath: (keyPath, subKeyPath) ->
     return false unless keyPath? and subKeyPath?
-    pathSubTokens = subKeyPath.split('.')
-    pathTokens = keyPath.split('.').slice(0, pathSubTokens.length)
+    pathSubTokens = splitKeyPath(subKeyPath)
+    pathTokens = splitKeyPath(keyPath).slice(0, pathSubTokens.length)
     _.isEqual(pathTokens, pathSubTokens)
 
   setRawDefault: (keyPath, value) ->
@@ -821,7 +824,7 @@ class Config
 
   setDefaults: (keyPath, defaults) ->
     if defaults? and isPlainObject(defaults)
-      keys = if keyPath? then keyPath.split('.') else []
+      keys = splitKeyPath(keyPath)
       for key, childValue of defaults
         continue unless defaults.hasOwnProperty(key)
         @setDefaults(keys.concat([key]).join('.'), childValue)
@@ -831,6 +834,32 @@ class Config
         @setRawDefault(keyPath, defaults)
       catch e
         console.warn("'#{keyPath}' could not set the default. Attempted default: #{JSON.stringify(defaults)}; Schema: #{JSON.stringify(@getSchema(keyPath))}")
+
+  # `schema` will look something like this
+  #
+  # ```coffee
+  # type: 'string'
+  # default: 'ok'
+  # scopes:
+  #   '.source.js':
+  #     default: 'omg'
+  # ```
+  setScopedDefaultsFromSchema: (keyPath, schema) ->
+    if schema.scopes? and isPlainObject(schema.scopes)
+      scopedDefaults = {}
+      for scope, scopeSchema of schema.scopes
+        continue unless scopeSchema.hasOwnProperty('default')
+        scopedDefaults[scope] = {}
+        _.setValueForKeyPath(scopedDefaults[scope], keyPath, scopeSchema.default)
+      @scopedSettingsStore.addProperties('schema-default', scopedDefaults)
+
+    if schema.type is 'object' and schema.properties? and isPlainObject(schema.properties)
+      keys = splitKeyPath(keyPath)
+      for key, childValue of schema.properties
+        continue unless schema.properties.hasOwnProperty(key)
+        @setScopedDefaultsFromSchema(keys.concat([key]).join('.'), childValue)
+
+    return
 
   extractDefaultsFromSchema: (schema) ->
     if schema.default?
@@ -876,8 +905,8 @@ class Config
     @emitter.emit 'did-change'
 
   getRawScopedValue: (scopeDescriptor, keyPath) ->
-    scopeChain = @scopeChainForScopeDescriptor(scopeDescriptor)
-    @scopedSettingsStore.getPropertyValue(scopeChain, keyPath)
+    scopeDescriptor = ScopeDescriptor.fromObject(scopeDescriptor)
+    @scopedSettingsStore.getPropertyValue(scopeDescriptor.getScopeChain(), keyPath)
 
   observeScopedKeyPath: (scopeDescriptor, keyPath, callback) ->
     oldValue = @get(scopeDescriptor, keyPath)
@@ -904,19 +933,8 @@ class Config
   # * language mode uses it for one thing.
   # * autocomplete uses it for editor.completions
   settingsForScopeDescriptor: (scopeDescriptor, keyPath) ->
-    scopeChain = scopeDescriptor
-      .map (scope) ->
-        scope = ".#{scope}" unless scope[0] is '.'
-        scope
-      .join(' ')
-    @scopedSettingsStore.getProperties(scopeChain, keyPath)
-
-  scopeChainForScopeDescriptor: (scopeDescriptor) ->
-    scopeDescriptor
-      .map (scope) ->
-        scope = ".#{scope}" unless scope[0] is '.'
-        scope
-      .join(' ')
+    scopeDescriptor = ScopeDescriptor.fromObject(scopeDescriptor)
+    @scopedSettingsStore.getProperties(scopeDescriptor.getScopeChain(), keyPath)
 
 # Base schema enforcers. These will coerce raw input into the specified type,
 # and will throw an error when the value cannot be coerced. Throwing the error
@@ -1016,3 +1034,14 @@ Config.addSchemaEnforcers
 
 isPlainObject = (value) ->
   _.isObject(value) and not _.isArray(value) and not _.isFunction(value) and not _.isString(value)
+
+splitKeyPath = (keyPath) ->
+  return [] unless keyPath?
+  startIndex = 0
+  keyPathArray = []
+  for char, i in keyPath
+    if char is '.' and (i is 0 or keyPath[i-1] != '\\')
+      keyPathArray.push keyPath.substring(startIndex, i)
+      startIndex = i + 1
+  keyPathArray.push keyPath.substr(startIndex, keyPath.length)
+  keyPathArray
