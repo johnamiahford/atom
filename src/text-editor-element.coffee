@@ -1,4 +1,4 @@
-{View, $} = require 'space-pen'
+{View, $, callRemoveHooks} = require 'space-pen'
 React = require 'react-atom-fork'
 {defaults} = require 'underscore-plus'
 TextBuffer = require 'text-buffer'
@@ -37,10 +37,15 @@ class TextEditorElement extends HTMLElement
 
   setModel: (model) ->
     throw new Error("Model already assigned on TextEditorElement") if @model?
+    return if model.isDestroyed()
+
     @model = model
     @mountComponent()
     @addGrammarScopeAttribute()
     @model.onDidChangeGrammar => @addGrammarScopeAttribute()
+    @addEncodingAttribute()
+    @model.onDidChangeEncoding => @addEncodingAttribute()
+    @model.onDidDestroy => @unmountComponent()
     @__spacePenView.setModel(@model)
     @model
 
@@ -68,6 +73,7 @@ class TextEditorElement extends HTMLElement
 
   unmountComponent: ->
     return unless @component?.isMounted()
+    callRemoveHooks(this)
     React.unmountComponentAtNode(this)
     @component = null
 
@@ -85,7 +91,10 @@ class TextEditorElement extends HTMLElement
 
   addGrammarScopeAttribute: ->
     grammarScope = @model.getGrammar()?.scopeName?.replace(/\./g, ' ')
-    @setAttribute('data-grammar', grammarScope)
+    @dataset.grammar = grammarScope
+
+  addEncodingAttribute: ->
+    @dataset.encoding = @model.getEncoding()
 
   hasFocus: ->
     this is document.activeElement or @contains(document.activeElement)

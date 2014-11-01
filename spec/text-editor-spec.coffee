@@ -157,6 +157,19 @@ describe "TextEditor", ->
 
       expect(observed).toEqual [__filename, undefined]
 
+  describe "encoding", ->
+    it "notifies ::onDidChangeEncoding observers when the editor encoding changes", ->
+      observed = []
+      editor.onDidChangeEncoding (encoding) -> observed.push(encoding)
+
+      editor.setEncoding('utf16le')
+      editor.setEncoding('utf16le')
+      editor.setEncoding('utf16be')
+      editor.setEncoding()
+      editor.setEncoding()
+
+      expect(observed).toEqual ['utf16le', 'utf16be', 'utf8']
+
   describe "cursor", ->
     describe ".getLastCursor()", ->
       it "returns the most recently created cursor", ->
@@ -1792,6 +1805,16 @@ describe "TextEditor", ->
           expect(willInsertSpy).toHaveBeenCalled()
           expect(didInsertSpy).not.toHaveBeenCalled()
 
+      describe "when the undo option is set to 'skip'", ->
+        beforeEach ->
+          editor.setSelectedBufferRange([[1, 2], [1, 2]])
+
+        it "does not undo the skipped operation", ->
+          range = editor.insertText('x')
+          range = editor.insertText('y', undo: 'skip')
+          editor.undo()
+          expect(buffer.lineForRow(1)).toBe '  yvar sort = function(items) {'
+
     describe ".insertNewline()", ->
       describe "when there is a single cursor", ->
         describe "when the cursor is at the beginning of a line", ->
@@ -3086,6 +3109,11 @@ describe "TextEditor", ->
         editor.setTabLength(6)
         expect(editor.getTabLength()).toBe 6
         expect(editor.tokenizedLineForScreenRow(5).tokens[0].firstNonWhitespaceIndex).toBe 6
+
+        changeHandler = jasmine.createSpy('changeHandler')
+        editor.onDidChange(changeHandler)
+        editor.setTabLength(6)
+        expect(changeHandler).not.toHaveBeenCalled()
 
       it 'retokenizes when the editor.tabLength setting is updated', ->
         expect(editor.getTabLength()).toBe 2

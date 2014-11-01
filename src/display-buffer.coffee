@@ -11,7 +11,6 @@ Fold = require './fold'
 Token = require './token'
 Decoration = require './decoration'
 Marker = require './marker'
-textUtils = require './text-utils'
 Grim = require 'grim'
 
 class BufferToScreenConversionError extends Error
@@ -654,7 +653,7 @@ class DisplayBuffer extends Model
       charWidths = @getScopedCharWidths(token.scopes)
       valueIndex = 0
       while valueIndex < token.value.length
-        if textUtils.isPairedCharacter(token.value, valueIndex)
+        if token.hasPairedCharacter
           char = token.value.substr(valueIndex, 2)
           charLength = 2
           valueIndex += 2
@@ -683,7 +682,7 @@ class DisplayBuffer extends Model
       charWidths = @getScopedCharWidths(token.scopes)
       valueIndex = 0
       while valueIndex < token.value.length
-        if textUtils.isPairedCharacter(token.value, valueIndex)
+        if token.hasPairedCharacter
           char = token.value.substr(valueIndex, 2)
           charLength = 2
           valueIndex += 2
@@ -736,6 +735,10 @@ class DisplayBuffer extends Model
   #
   # Returns a {Point}.
   screenPositionForBufferPosition: (bufferPosition, options) ->
+    # TODO: Expand this exception to cover all versions once we burn it in on non-release builds
+    if @isDestroyed() and not atom.isReleasedVersion()
+      throw new Error("This TextEditor has been destroyed")
+
     { row, column } = @buffer.clipPosition(bufferPosition)
     [startScreenRow, endScreenRow] = @rowMap.screenRowRangeForBufferRow(row)
     for screenRow in [startScreenRow...endScreenRow]
@@ -1073,7 +1076,7 @@ class DisplayBuffer extends Model
       marker.notifyObservers(textChanged: false)
 
   destroyed: ->
-    marker.unsubscribe() for marker in @getMarkers()
+    marker.unsubscribe() for id, marker of @markers
     @tokenizedBuffer.destroy()
     @unsubscribe()
 

@@ -55,6 +55,8 @@ TextEditorComponent = React.createClass
     hasSelection = editor.getLastSelection()? and !editor.getLastSelection().isEmpty()
     style = {}
 
+    @performedInitialMeasurement = false if editor.isDestroyed()
+
     if @performedInitialMeasurement
       renderedRowRange = @getRenderedRowRange()
       [renderedStartRow, renderedEndRow] = renderedRowRange
@@ -195,6 +197,7 @@ TextEditorComponent = React.createClass
 
     parentView.__spacePenView.trigger 'editor:will-be-removed', [parentView.__spacePenView]
     @unsubscribe()
+    @scopedConfigSubscriptions.dispose()
     window.removeEventListener 'resize', @requestHeightAndWidthMeasurement
     clearInterval(@domPollingIntervalId)
     @domPollingIntervalId = null
@@ -227,10 +230,10 @@ TextEditorComponent = React.createClass
     @props.editor.setVisible(true)
     @performedInitialMeasurement = true
     @updatesPaused = false
-    @forceUpdate() if @updateRequestedWhilePaused
+    @forceUpdate() if @updateRequestedWhilePaused and @canUpdate()
 
   requestUpdate: ->
-    return unless @isMounted()
+    return unless @canUpdate()
 
     if @updatesPaused
       @updateRequestedWhilePaused = true
@@ -242,7 +245,10 @@ TextEditorComponent = React.createClass
       @updateRequested = true
       requestAnimationFrame =>
         @updateRequested = false
-        @forceUpdate() if @isMounted()
+        @forceUpdate() if @canUpdate()
+
+  canUpdate: ->
+    @isMounted() and @props.editor.isAlive()
 
   requestAnimationFrame: (fn) ->
     @updatesPaused = true
@@ -250,7 +256,7 @@ TextEditorComponent = React.createClass
     requestAnimationFrame =>
       fn()
       @updatesPaused = false
-      if @updateRequestedWhilePaused and @isMounted()
+      if @updateRequestedWhilePaused and @canUpdate()
         @updateRequestedWhilePaused = false
         @forceUpdate()
 
@@ -773,7 +779,7 @@ TextEditorComponent = React.createClass
     if position is 'absolute' or height
       if @autoHeight
         @autoHeight = false
-        @forceUpdate() unless @updatesPaused
+        @forceUpdate() if not @updatesPaused and @canUpdate()
 
       clientHeight =  scrollViewNode.clientHeight
       editor.setHeight(clientHeight) if clientHeight > 0
