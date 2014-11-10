@@ -140,6 +140,9 @@ class Atom extends Model
   # Public: A {DeserializerManager} instance
   deserializers: null
 
+  # Public: A {ViewRegistry} instance
+  views: null
+
   # Public: A {Workspace} instance
   workspace: null
 
@@ -174,6 +177,7 @@ class Atom extends Model
       @executeJavaScriptInDevTools('InspectorFrontendAPI.showConsole()')
       @lastUncaughtError = Array::slice.call(arguments)
       @emit 'uncaught-error', arguments...
+      @emitter.emit 'did-throw-error', arguments...
 
     @unsubscribe()
     @setBodyPlatformClass()
@@ -182,6 +186,7 @@ class Atom extends Model
 
     Config = require './config'
     KeymapManager = require './keymap-extensions'
+    ViewRegistry = require './view-registry'
     CommandRegistry = require './command-registry'
     PackageManager = require './package-manager'
     Clipboard = require './clipboard'
@@ -209,6 +214,7 @@ class Atom extends Model
     @keymaps = new KeymapManager({configDirPath, resourcePath})
     @keymap = @keymaps # Deprecated
     @commands = new CommandRegistry
+    @views = new ViewRegistry
     @packages = new PackageManager({devMode, configDirPath, resourcePath, safeMode})
     @styles = new StyleManager
     document.head.appendChild(new StylesElement)
@@ -241,6 +247,15 @@ class Atom extends Model
   # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   onDidBeep: (callback) ->
     @emitter.on 'did-beep', callback
+
+  # Extended: Invoke the given callback whenever there is an unhandled error.
+  #
+  # * `callback` {Function} to be called whenever there is an unhandled error
+  #   * `errorMessage` {String}
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  onDidThrowError: (callback) ->
+    @emitter.on 'did-throw-error', callback
 
   ###
   Section: Atom Details
@@ -597,7 +612,7 @@ class Atom extends Model
 
     startTime = Date.now()
     @workspace = Workspace.deserialize(@state.workspace) ? new Workspace
-    @workspaceView = @workspace.getView(@workspace).__spacePenView
+    @workspaceView = @views.getView(@workspace).__spacePenView
     @deserializeTimings.workspace = Date.now() - startTime
 
     @keymaps.defaultTarget = @workspaceView[0]

@@ -11,7 +11,6 @@ Fold = require './fold'
 Token = require './token'
 Decoration = require './decoration'
 Marker = require './marker'
-textUtils = require './text-utils'
 Grim = require 'grim'
 
 class BufferToScreenConversionError extends Error
@@ -654,7 +653,7 @@ class DisplayBuffer extends Model
       charWidths = @getScopedCharWidths(token.scopes)
       valueIndex = 0
       while valueIndex < token.value.length
-        if textUtils.isPairedCharacter(token.value, valueIndex)
+        if token.hasPairedCharacter
           char = token.value.substr(valueIndex, 2)
           charLength = 2
           valueIndex += 2
@@ -683,7 +682,7 @@ class DisplayBuffer extends Model
       charWidths = @getScopedCharWidths(token.scopes)
       valueIndex = 0
       while valueIndex < token.value.length
-        if textUtils.isPairedCharacter(token.value, valueIndex)
+        if token.hasPairedCharacter
           char = token.value.substr(valueIndex, 2)
           charLength = 2
           valueIndex += 2
@@ -736,6 +735,8 @@ class DisplayBuffer extends Model
   #
   # Returns a {Point}.
   screenPositionForBufferPosition: (bufferPosition, options) ->
+    throw new Error("This TextEditor has been destroyed") if @isDestroyed()
+
     { row, column } = @buffer.clipPosition(bufferPosition)
     [startScreenRow, endScreenRow] = @rowMap.screenRowRangeForBufferRow(row)
     for screenRow in [startScreenRow...endScreenRow]
@@ -1073,9 +1074,10 @@ class DisplayBuffer extends Model
       marker.notifyObservers(textChanged: false)
 
   destroyed: ->
-    marker.unsubscribe() for marker in @getMarkers()
-    @tokenizedBuffer.destroy()
+    marker.unsubscribe() for id, marker of @markers
+    @scopedConfigSubscriptions.dispose()
     @unsubscribe()
+    @tokenizedBuffer.destroy()
 
   logLines: (start=0, end=@getLastRow()) ->
     for row in [start..end]

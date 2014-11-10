@@ -63,8 +63,9 @@ class Pane extends Model
   getContainer: -> @container
 
   setContainer: (container) ->
-    container.didAddPane({pane: this}) unless container is @container
-    @container = container
+    unless container is @container
+      @container = container
+      container.didAddPane({pane: this})
 
   ###
   Section: Event Subscription
@@ -501,6 +502,8 @@ class Pane extends Model
 
   # Public: Makes this pane the *active* pane, causing it to gain focus.
   activate: ->
+    throw new Error("Pane has been destroyed") if @isDestroyed()
+
     @container?.setActivePane(this)
     @emit 'activated'
     @emitter.emit 'did-activate'
@@ -605,3 +608,11 @@ class Pane extends Model
         rightmostSibling
     else
       @splitRight()
+
+  close: ->
+    @destroy() if @confirmClose()
+
+  confirmClose: ->
+    for item in @getItems()
+      return false unless @promptToSaveItem(item)
+    true

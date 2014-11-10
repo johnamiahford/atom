@@ -134,9 +134,11 @@ class TextEditor extends Model
       @emitter.emit 'did-change-title', @getTitle()
       @emit "path-changed"
       @emitter.emit 'did-change-path', @getPath()
+    @subscribe @buffer.onDidChangeEncoding =>
+      @emitter.emit 'did-change-encoding', @getEncoding()
     @subscribe @buffer.onDidDestroy => @destroy()
 
-    # TODO: remove these thwne we remove the deprecations. They are old events.
+    # TODO: remove these when we remove the deprecations. They are old events.
     @subscribe @buffer.onDidStopChanging => @emit "contents-modified"
     @subscribe @buffer.onDidConflict => @emit "contents-conflicted"
     @subscribe @buffer.onDidChangeModified => @emit "modified-status-changed"
@@ -173,6 +175,7 @@ class TextEditor extends Model
 
   destroyed: ->
     @unsubscribe()
+    @scopedConfigSubscriptions.dispose()
     selection.destroy() for selection in @getSelections()
     @buffer.release()
     @displayBuffer.destroy()
@@ -259,6 +262,14 @@ class TextEditor extends Model
   # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   onDidChangeSoftWrapped: (callback) ->
     @displayBuffer.onDidChangeSoftWrapped(callback)
+
+  # Extended: Calls your `callback` when the buffer's encoding has changed.
+  #
+  # * `callback` {Function}
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  onDidChangeEncoding: (callback) ->
+    @emitter.on 'did-change-encoding', callback
 
   # Extended: Calls your `callback` when the grammar that interprets and
   # colorizes the text has been changed. Immediately calls your callback with
@@ -568,6 +579,16 @@ class TextEditor extends Model
   # Essential: Returns the {String} path of this editor's text buffer.
   getPath: -> @buffer.getPath()
 
+  # Extended: Returns the {String} character set encoding of this editor's text
+  # buffer.
+  getEncoding: -> @buffer.getEncoding()
+
+  # Extended: Set the character set encoding to use in this editor's text
+  # buffer.
+  #
+  # * `encoding` The {String} character set encoding name such as 'utf8'
+  setEncoding: (encoding) -> @buffer.setEncoding(encoding)
+
   # Essential: Returns {Boolean} `true` if this editor has been modified.
   isModified: -> @buffer.isModified()
 
@@ -717,9 +738,12 @@ class TextEditor extends Model
   #
   # * `range` A {Range} or range-compatible {Array}.
   # * `text` A {String}
+  # * `options` (optional) {Object}
+  #   * `normalizeLineEndings` (optional) {Boolean} (default: true)
+  #   * `undo` (optional) {String} 'skip' will skip the undo system
   #
   # Returns the {Range} of the newly-inserted text.
-  setTextInBufferRange: (range, text, normalizeLineEndings) -> @getBuffer().setTextInRange(range, text, normalizeLineEndings)
+  setTextInBufferRange: (range, text, options) -> @getBuffer().setTextInRange(range, text, options)
 
   # Essential: For each selection, replace the selected text with the given text.
   #
@@ -752,7 +776,7 @@ class TextEditor extends Model
     @insertText('\n')
 
   # Essential: For each selection, if the selection is empty, delete the character
-  # preceding the cursor. Otherwise delete the selected text.
+  # following the cursor. Otherwise delete the selected text.
   delete: ->
     @mutateSelectedText (selection) -> selection.delete()
 
@@ -1073,8 +1097,10 @@ class TextEditor extends Model
   # abort the transaction, call {::abortTransaction} to terminate the function's
   # execution and revert any changes performed up to the abortion.
   #
+  # * `groupingInterval` (optional) This is the sames as the `groupingInterval`
+  #    parameter in {::beginTransaction}
   # * `fn` A {Function} to call inside the transaction.
-  transact: (fn) -> @buffer.transact(fn)
+  transact: (groupingInterval, fn) -> @buffer.transact(groupingInterval, fn)
 
   # Extended: Start an open-ended transaction.
   #
@@ -1082,7 +1108,12 @@ class TextEditor extends Model
   # transaction. If you nest calls to transactions, only the outermost
   # transaction is considered. You must match every begin with a matching
   # commit, but a single call to abort will cancel all nested transactions.
-  beginTransaction: -> @buffer.beginTransaction()
+  #
+  # * `groupingInterval` (optional) The {Number} of milliseconds for which this
+  #   transaction should be considered 'groupable' after it begins. If a transaction
+  #   with a positive `groupingInterval` is committed while the previous transaction is
+  #   still 'groupable', the two transactions are merged with respect to undo and redo.
+  beginTransaction: (groupingInterval) -> @buffer.beginTransaction(groupingInterval)
 
   # Extended: Commit an open-ended transaction started with {::beginTransaction}
   # and push it to the undo stack.

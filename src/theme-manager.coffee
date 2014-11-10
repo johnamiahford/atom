@@ -159,11 +159,14 @@ class ThemeManager
     themeNames = atom.config.get('core.themes') ? []
     themeNames = [themeNames] unless _.isArray(themeNames)
     themeNames = themeNames.filter (themeName) ->
-      themeName and typeof themeName is 'string'
+      if themeName and typeof themeName is 'string'
+        return true if atom.packages.resolvePackagePath(themeName)
+        console.warn("Enabled theme '#{themeName}' is not installed.")
+      false
 
-    # Use a built-in syntax and UI theme when in safe mode since themes
-    # installed to ~/.atom/packages will not be loaded.
-    if @safeMode
+    # Use a built-in syntax and UI theme any time the configured themes are not
+    # available.
+    if themeNames.length < 2
       builtInThemeNames = [
         'atom-dark-syntax'
         'atom-dark-ui'
@@ -238,13 +241,16 @@ class ThemeManager
     @applyStylesheet(userStylesheetPath, userStylesheetContents, 'userTheme')
 
   loadBaseStylesheets: ->
-    @requireStylesheet('bootstrap/less/bootstrap')
+    @requireStylesheet('../static/bootstrap')
     @reloadBaseStylesheets()
 
   reloadBaseStylesheets: ->
     @requireStylesheet('../static/atom')
     if nativeStylesheetPath = fs.resolveOnLoadPath(process.platform, ['css', 'less'])
       @requireStylesheet(nativeStylesheetPath)
+
+    textEditorStylesPath = path.join(@resourcePath, 'static', 'text-editor-shadow.less')
+    atom.styles.addStyleSheet(@loadLessStylesheet(textEditorStylesPath), sourcePath: textEditorStylesPath, context: 'atom-text-editor')
 
   stylesheetElementForId: (id) ->
     document.head.querySelector("atom-styles style[source-path=\"#{id}\"]")

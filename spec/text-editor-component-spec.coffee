@@ -721,11 +721,11 @@ describe "TextEditorComponent", ->
       editor.setCursorScreenPosition([0, 16])
       nextAnimationFrame()
 
-      atom.themes.applyStylesheet 'test', """
+      atom.styles.addStyleSheet """
         .function.js {
           font-weight: bold;
         }
-      """
+      """, context: 'atom-text-editor'
       nextAnimationFrame() # update based on new measurements
 
       cursor = componentNode.querySelector('.cursor')
@@ -1537,8 +1537,9 @@ describe "TextEditorComponent", ->
 
     it "transfers focus to the hidden input", ->
       expect(document.activeElement).toBe document.body
-      componentNode.focus()
-      expect(document.activeElement).toBe inputNode
+      wrapperNode.focus()
+      expect(document.activeElement).toBe wrapperNode
+      expect(wrapperNode.shadowRoot.activeElement).toBe inputNode
 
     it "adds the 'is-focused' class to the editor when the hidden input is focused", ->
       expect(document.activeElement).toBe document.body
@@ -1667,12 +1668,13 @@ describe "TextEditorComponent", ->
       component.measureHeightAndWidth()
       nextAnimationFrame()
 
-      atom.themes.applyStylesheet "test", """
+      atom.styles.addStyleSheet """
         ::-webkit-scrollbar {
           width: 8px;
           height: 8px;
         }
-      """
+      """, context: 'atom-text-editor'
+
       nextAnimationFrame()
 
       scrollbarCornerNode = componentNode.querySelector('.scrollbar-corner')
@@ -1921,6 +1923,31 @@ describe "TextEditorComponent", ->
       componentNode.dispatchEvent(buildTextInputEvent(data: 'x', target: inputNode))
       expect(nextAnimationFrame).toBe noAnimationFrame
       expect(editor.lineTextForBufferRow(0)).toBe 'var quicksort = function () {'
+
+    it "groups events that occur close together in time into single undo entries", ->
+      currentTime = 0
+      spyOn(Date, 'now').andCallFake -> currentTime
+
+      atom.config.set('editor.undoGroupingInterval', 100)
+
+      editor.setText("")
+      componentNode.dispatchEvent(buildTextInputEvent(data: 'x', target: inputNode))
+
+      currentTime += 99
+      componentNode.dispatchEvent(buildTextInputEvent(data: 'y', target: inputNode))
+
+      currentTime += 99
+      componentNode.dispatchEvent(new CustomEvent('editor:duplicate-lines', bubbles: true, cancelable: true))
+
+      currentTime += 100
+      componentNode.dispatchEvent(new CustomEvent('editor:duplicate-lines', bubbles: true, cancelable: true))
+      expect(editor.getText()).toBe "xy\nxy\nxy"
+
+      componentNode.dispatchEvent(new CustomEvent('core:undo', bubbles: true, cancelable: true))
+      expect(editor.getText()).toBe "xy\nxy"
+
+      componentNode.dispatchEvent(new CustomEvent('core:undo', bubbles: true, cancelable: true))
+      expect(editor.getText()).toBe ""
 
     describe "when IME composition is used to insert international characters", ->
       inputNode = null
@@ -2285,6 +2312,12 @@ describe "TextEditorComponent", ->
       expect(wrapperNode.dataset.grammar).toBe 'source js'
       editor.setGrammar(atom.syntax.nullGrammar)
       expect(wrapperNode.dataset.grammar).toBe 'text plain null-grammar'
+
+  describe "encoding data attributes", ->
+    it "adds and updates the encoding data attribute based on the current encoding", ->
+      expect(wrapperNode.dataset.encoding).toBe 'utf8'
+      editor.setEncoding('utf16le')
+      expect(wrapperNode.dataset.encoding).toBe 'utf16le'
 
   describe "detaching and reattaching the editor (regression)", ->
     it "does not throw an exception", ->

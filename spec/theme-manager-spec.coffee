@@ -85,16 +85,7 @@ describe "ThemeManager", ->
       runs ->
         reloadHandler.reset()
         expect($('style.theme')).toHaveLength 0
-        atom.config.set('core.themes', ['atom-dark-syntax'])
-
-      waitsFor ->
-        reloadHandler.callCount == 1
-
-      runs ->
-        reloadHandler.reset()
-        expect($('style[group=theme]')).toHaveLength 1
-        expect($('style[group=theme]:eq(0)').attr('source-path')).toMatch /atom-dark-syntax/
-        atom.config.set('core.themes', ['atom-light-syntax', 'atom-dark-syntax'])
+        atom.config.set('core.themes', ['atom-dark-ui'])
 
       waitsFor ->
         reloadHandler.callCount == 1
@@ -102,8 +93,17 @@ describe "ThemeManager", ->
       runs ->
         reloadHandler.reset()
         expect($('style[group=theme]')).toHaveLength 2
-        expect($('style[group=theme]:eq(0)').attr('source-path')).toMatch /atom-dark-syntax/
-        expect($('style[group=theme]:eq(1)').attr('source-path')).toMatch /atom-light-syntax/
+        expect($('style[group=theme]:eq(0)').attr('source-path')).toMatch /atom-dark-ui/
+        atom.config.set('core.themes', ['atom-light-ui', 'atom-dark-ui'])
+
+      waitsFor ->
+        reloadHandler.callCount == 1
+
+      runs ->
+        reloadHandler.reset()
+        expect($('style[group=theme]')).toHaveLength 2
+        expect($('style[group=theme]:eq(0)').attr('source-path')).toMatch /atom-dark-ui/
+        expect($('style[group=theme]:eq(1)').attr('source-path')).toMatch /atom-light-ui/
         atom.config.set('core.themes', [])
 
       waitsFor ->
@@ -111,7 +111,7 @@ describe "ThemeManager", ->
 
       runs ->
         reloadHandler.reset()
-        expect($('style[group=theme]')).toHaveLength 0
+        expect($('style[group=theme]')).toHaveLength 2
         # atom-dark-ui has an directory path, the syntax one doesn't
         atom.config.set('core.themes', ['theme-with-index-less', 'atom-dark-ui'])
 
@@ -208,7 +208,7 @@ describe "ThemeManager", ->
 
   describe "base stylesheet loading", ->
     beforeEach ->
-      atom.workspaceView = atom.workspace.getView(atom.workspace).__spacePenView
+      atom.workspaceView = atom.views.getView(atom.workspace).__spacePenView
       atom.workspaceView.append $('<atom-text-editor>')
       atom.workspaceView.attachToDom()
 
@@ -217,7 +217,7 @@ describe "ThemeManager", ->
 
     it "loads the correct values from the theme's ui-variables file", ->
       themeManager.onDidReloadAll reloadHandler = jasmine.createSpy()
-      atom.config.set('core.themes', ['theme-with-ui-variables'])
+      atom.config.set('core.themes', ['theme-with-ui-variables', 'theme-with-syntax-variables'])
 
       waitsFor ->
         reloadHandler.callCount > 0
@@ -234,7 +234,7 @@ describe "ThemeManager", ->
     describe "when there is a theme with incomplete variables", ->
       it "loads the correct values from the fallback ui-variables", ->
         themeManager.onDidReloadAll reloadHandler = jasmine.createSpy()
-        atom.config.set('core.themes', ['theme-with-incomplete-ui-variables'])
+        atom.config.set('core.themes', ['theme-with-incomplete-ui-variables', 'theme-with-syntax-variables'])
 
         waitsFor ->
           reloadHandler.callCount > 0
@@ -251,7 +251,7 @@ describe "ThemeManager", ->
         expect(atom.workspaceView).toHaveClass 'theme-atom-dark-ui'
 
         themeManager.onDidReloadAll reloadHandler = jasmine.createSpy()
-        atom.config.set('core.themes', ['theme-with-ui-variables'])
+        atom.config.set('core.themes', ['theme-with-ui-variables', 'theme-with-syntax-variables'])
 
         waitsFor ->
           reloadHandler.callCount > 0
@@ -259,7 +259,9 @@ describe "ThemeManager", ->
         runs ->
           # `theme-` twice as it prefixes the name with `theme-`
           expect(atom.workspaceView).toHaveClass 'theme-theme-with-ui-variables'
+          expect(atom.workspaceView).toHaveClass 'theme-theme-with-syntax-variables'
           expect(atom.workspaceView).not.toHaveClass 'theme-atom-dark-ui'
+          expect(atom.workspaceView).not.toHaveClass 'theme-atom-dark-syntax'
 
   describe "when the user stylesheet changes", ->
     it "reloads it", ->
@@ -308,24 +310,19 @@ describe "ThemeManager", ->
         expect(stylesheetsChangedHandler).toHaveBeenCalled()
 
   describe "when a non-existent theme is present in the config", ->
-    it "logs a warning but does not throw an exception (regression)", ->
-      reloaded = false
+    beforeEach ->
+      spyOn(console, 'warn')
+      atom.config.set('core.themes', ['non-existent-dark-ui', 'non-existent-dark-syntax'])
 
       waitsForPromise ->
         themeManager.activateThemes()
 
-      runs ->
-        disposable = themeManager.onDidReloadAll ->
-          disposable.dispose()
-          reloaded = true
-        spyOn(console, 'warn')
-        expect(-> atom.config.set('core.themes', ['atom-light-ui', 'theme-really-does-not-exist'])).not.toThrow()
-
-      waitsFor -> reloaded
-
-      runs ->
-        expect(console.warn.callCount).toBe 1
-        expect(console.warn.argsForCall[0][0].length).toBeGreaterThan 0
+    it 'uses the default dark UI and syntax themes and logs a warning', ->
+      activeThemeNames = themeManager.getActiveNames()
+      expect(console.warn.callCount).toBe 2
+      expect(activeThemeNames.length).toBe(2)
+      expect(activeThemeNames).toContain('atom-dark-ui')
+      expect(activeThemeNames).toContain('atom-dark-syntax')
 
   describe "when in safe mode", ->
     beforeEach ->
