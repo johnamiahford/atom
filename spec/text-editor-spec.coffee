@@ -98,12 +98,13 @@ describe "TextEditor", ->
       expect(editor2.isFoldedAtBufferRow(4)).not.toBe editor.isFoldedAtBufferRow(4)
 
   describe "config defaults", ->
-    it "uses the `editor.tabLength`, `editor.softWrap`, and `editor.softTabs` config values", ->
+    it "uses the `editor.tabLength`, `editor.softWrap`, and `editor.softTabs`, and `core.fileEncoding` config values", ->
       editor1 = null
       editor2 = null
       atom.config.set('editor.tabLength', 4)
       atom.config.set('editor.softWrap', true)
       atom.config.set('editor.softTabs', false)
+      atom.config.set('core.fileEncoding', 'utf16le')
 
       waitsForPromise ->
         atom.workspace.open('a').then (o) -> editor1 = o
@@ -112,10 +113,12 @@ describe "TextEditor", ->
         expect(editor1.getTabLength()).toBe 4
         expect(editor1.isSoftWrapped()).toBe true
         expect(editor1.getSoftTabs()).toBe false
+        expect(editor1.getEncoding()).toBe 'utf16le'
 
         atom.config.set('editor.tabLength', 8)
         atom.config.set('editor.softWrap', false)
         atom.config.set('editor.softTabs', true)
+        atom.config.set('core.fileEncoding', 'macroman')
 
       waitsForPromise ->
         atom.workspace.open('b').then (o) -> editor2 = o
@@ -124,6 +127,7 @@ describe "TextEditor", ->
         expect(editor2.getTabLength()).toBe 8
         expect(editor2.isSoftWrapped()).toBe false
         expect(editor2.getSoftTabs()).toBe true
+        expect(editor2.getEncoding()).toBe 'macroman'
 
   describe "title", ->
     describe ".getTitle()", ->
@@ -1157,6 +1161,21 @@ describe "TextEditor", ->
         editor.selectLinesContainingCursors()
         editor.selectLinesContainingCursors()
         expect(editor.getSelectedBufferRange()).toEqual [[0,0], [2,0]]
+
+      it "autoscrolls to the selection", ->
+        editor.manageScrollPosition = true
+        editor.setLineHeightInPixels(10)
+        editor.setDefaultCharWidth(10)
+        editor.setHeight(50)
+        editor.setWidth(50)
+        editor.setHorizontalScrollbarHeight(0)
+        editor.setCursorScreenPosition([5, 6])
+
+        editor.scrollToTop()
+        expect(editor.getScrollTop()).toBe 0
+
+        editor.selectLinesContainingCursors()
+        expect(editor.getScrollBottom()).toBe (7 + editor.getVerticalScrollMargin()) * 10
 
     describe ".selectToBeginningOfWord()", ->
       it "selects text from cusor position to beginning of word", ->
@@ -2469,6 +2488,22 @@ describe "TextEditor", ->
 
           expect(clipboard.readText()).toBe 'quicksort\nsort'
 
+        describe "when no text is selected", ->
+          beforeEach ->
+            editor.setSelectedBufferRanges([[1, 0], [1, 0]])
+            editor.addCursorAtBufferPosition([5, 0])
+
+          it "cuts the lines on which there are cursors", ->
+            editor.cutSelectedText()
+
+            expect(buffer.getLineCount()).toBe(11)
+            expect(buffer.lineForRow(1)).toBe("    if (items.length <= 1) return items;")
+            expect(buffer.lineForRow(4)).toBe("      current < pivot ? left.push(current) : right.push(current);")
+            expect(atom.clipboard.readWithMetadata().metadata.selections).toEqual([
+              "var quicksort = function () {\n"
+              "      current = items.shift();\n"
+            ])
+
       describe ".cutToEndOfLine()", ->
         describe "when soft wrap is on", ->
           it "cuts up to the end of the line", ->
@@ -2512,6 +2547,24 @@ describe "TextEditor", ->
             'sort'
             'items'
           ])
+
+        describe "when no text is selected", ->
+          beforeEach ->
+            editor.setSelectedBufferRanges([
+              [[1, 5], [1, 5]],
+              [[5, 8], [5, 8]]
+            ])
+
+          it "copies the lines on which there are cursors", ->
+            editor.copySelectedText()
+            expect(atom.clipboard.readWithMetadata().metadata.selections).toEqual([
+              "  var sort = function(items) {\n"
+              "      current = items.shift();\n"
+            ])
+            expect(editor.getSelectedBufferRanges()).toEqual([
+              [[1, 5], [1, 5]],
+              [[5, 8], [5, 8]]
+            ])
 
       describe ".pasteText()", ->
         it "pastes text into the buffer", ->
@@ -3419,6 +3472,19 @@ describe "TextEditor", ->
 
       waitsForPromise ->
         atom.packages.activatePackage('language-coffee-script')
+
+      runs ->
+        expect(editor.softTabs).toBe false
+
+    it "uses hard tabs in Makefile files", ->
+      # FIXME remove once this is handled by a scoped setting in the
+      # language-make package
+
+      waitsForPromise ->
+        atom.packages.activatePackage('language-make')
+
+      waitsForPromise ->
+        atom.project.open('Makefile').then (o) -> editor = o
 
       runs ->
         expect(editor.softTabs).toBe false

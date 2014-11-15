@@ -6,7 +6,7 @@ Delegator = require 'delegato'
 {Model} = require 'theorist'
 EmitterMixin = require('emissary').Emitter
 {CompositeDisposable, Emitter} = require 'event-kit'
-{Point, Range} = require 'text-buffer'
+{Point, Range} = TextBuffer = require 'text-buffer'
 LanguageMode = require './language-mode'
 DisplayBuffer = require './display-buffer'
 Cursor = require './cursor'
@@ -84,6 +84,7 @@ class TextEditor extends Model
     @cursors = []
     @selections = []
 
+    buffer ?= new TextBuffer
     @displayBuffer ?= new DisplayBuffer({buffer, tabLength, softWrapped})
     @buffer = @displayBuffer.buffer
     @softTabs = @usesSoftTabs() ? @softTabs ? atom.config.get('editor.softTabs') ? true
@@ -2243,6 +2244,10 @@ class TextEditor extends Model
   # Returns a {Boolean} or undefined if no non-comment lines had leading
   # whitespace.
   usesSoftTabs: ->
+    # FIXME Remove once this can be specified as a scoped setting in the
+    # language-make package
+    return false if @getGrammar().scopeName is 'source.makefile'
+
     for bufferRow in [0..@buffer.getLastRow()]
       continue if @displayBuffer.tokenizedBuffer.tokenizedLineForRow(bufferRow).isComment()
 
@@ -2463,13 +2468,20 @@ class TextEditor extends Model
   copySelectedText: ->
     maintainClipboard = false
     for selection in @getSelections()
-      selection.copy(maintainClipboard)
+      if selection.isEmpty()
+        previousRange = selection.getBufferRange()
+        selection.selectLine()
+        selection.copy(maintainClipboard)
+        selection.setBufferRange(previousRange)
+      else
+        selection.copy(maintainClipboard)
       maintainClipboard = true
 
   # Essential: For each selection, cut the selected text.
   cutSelectedText: ->
     maintainClipboard = false
     @mutateSelectedText (selection) ->
+      selection.selectLine() if selection.isEmpty()
       selection.cut(maintainClipboard)
       maintainClipboard = true
 
@@ -2484,17 +2496,15 @@ class TextEditor extends Model
   pasteText: (options={}) ->
     {text, metadata} = atom.clipboard.readWithMetadata()
 
-    containsNewlines = text.indexOf('\n') isnt -1
-
-    if metadata?.selections? and metadata.selections.length is @getSelections().length
+    if metadata?.selections?.length is @getSelections().length
       @mutateSelectedText (selection, index) ->
         text = metadata.selections[index]
         selection.insertText(text, options)
-
       return
 
-    else if atom.config.get(@getLastCursor().getScopeDescriptor(), "editor.normalizeIndentOnPaste") and metadata?.indentBasis?
-      if !@getLastCursor().hasPrecedingCharactersOnLine() or containsNewlines
+    if metadata?.indentBasis? and atom.config.get(@getLastCursor().getScopeDescriptor(), "editor.normalizeIndentOnPaste")
+      containsNewlines = text.indexOf('\n') isnt -1
+      if containsNewlines or !@getLastCursor().hasPrecedingCharactersOnLine()
         options.indentBasis ?= metadata.indentBasis
 
     @insertText(text, options)

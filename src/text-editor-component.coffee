@@ -50,7 +50,7 @@ TextEditorComponent = React.createClass
 
   render: ->
     {focused, showIndentGuide, showLineNumbers, visible} = @state
-    {editor, mini, cursorBlinkPeriod, cursorBlinkResumeDelay} = @props
+    {editor, mini, cursorBlinkPeriod, cursorBlinkResumeDelay, hostElement, useShadowDOM} = @props
     maxLineNumberDigits = editor.getLineCount().toString().length
     hasSelection = editor.getLastSelection()? and !editor.getLastSelection().isEmpty()
     style = {}
@@ -66,6 +66,7 @@ TextEditorComponent = React.createClass
 
       decorations = editor.decorationsForScreenRowRange(renderedStartRow, renderedEndRow)
       highlightDecorations = @getHighlightDecorations(decorations)
+      overlayDecorations = @getOverlayDecorations(decorations)
       lineDecorations = @getLineDecorations(decorations)
       placeholderText = editor.getPlaceholderText() if editor.isEmpty()
       visible = @isVisible()
@@ -89,7 +90,10 @@ TextEditorComponent = React.createClass
 
       style.height = scrollViewHeight if @autoHeight
 
-    className = 'editor-contents'
+    if useShadowDOM
+      className = 'editor-contents--private'
+    else
+      className = 'editor-contents'
     className += ' is-focused' if focused
     className += ' has-selection' if hasSelection
 
@@ -110,12 +114,13 @@ TextEditorComponent = React.createClass
 
         LinesComponent {
           ref: 'lines',
-          editor, lineHeightInPixels, defaultCharWidth, tokenizedLines, lineDecorations, highlightDecorations,
+          editor, lineHeightInPixels, defaultCharWidth, tokenizedLines,
+          lineDecorations, highlightDecorations, overlayDecorations, hostElement,
           showIndentGuide, renderedRowRange, @pendingChanges, scrollTop, scrollLeft,
           @scrollingVertically, scrollHeight, scrollWidth, mouseWheelScreenRow,
           visible, scrollViewHeight, @scopedCharacterWidthsChangeCount, lineWidth, @useHardwareAcceleration,
           placeholderText, @performedInitialMeasurement, @backgroundColor, cursorPixelRects,
-          cursorBlinkPeriod, cursorBlinkResumeDelay, mini
+          cursorBlinkPeriod, cursorBlinkResumeDelay, mini, useShadowDOM
         }
 
         ScrollbarComponent
@@ -182,7 +187,7 @@ TextEditorComponent = React.createClass
     @subscribe stylesElement.onDidUpdateStyleElement @onStylesheetsChanged
     @subscribe stylesElement.onDidRemoveStyleElement @onStylesheetsChanged
     unless atom.themes.isInitialLoadComplete()
-      @subscribe atom.themes.onDidReloadAll @onStylesheetsChanged
+      @subscribe atom.themes.onDidReloadAll @onAllThemesLoaded
     @subscribe scrollbarStyle.changes, @refreshScrollbars
 
     @domPollingIntervalId = setInterval(@pollDOM, @domPollingInterval)
@@ -351,7 +356,23 @@ TextEditorComponent = React.createClass
               endPixelPosition: editor.pixelPositionForScreenPosition(screenRange.end)
               decorations: []
             filteredDecorations[markerId].decorations.push decorationParams
+    filteredDecorations
 
+  getOverlayDecorations: (decorationsByMarkerId) ->
+    {editor} = @props
+    filteredDecorations = {}
+    for markerId, decorations of decorationsByMarkerId
+      marker = editor.getMarker(markerId)
+      headBufferPosition = marker.getHeadBufferPosition()
+      if marker.isValid()
+        for decoration in decorations
+          if decoration.isType('overlay')
+            decorationParams = decoration.getProperties()
+            filteredDecorations[markerId] ?=
+              id: markerId
+              headPixelPosition: editor.pixelPositionForScreenPosition(headBufferPosition)
+              decorations: []
+            filteredDecorations[markerId].decorations.push decorationParams
     filteredDecorations
 
   observeEditor: ->
@@ -627,8 +648,14 @@ TextEditorComponent = React.createClass
   onStylesheetsChanged: (styleElement) ->
     return unless @performedInitialMeasurement
     return unless atom.themes.isInitialLoadComplete()
-
     @refreshScrollbars() if not styleElement.sheet? or @containsScrollbarSelector(styleElement.sheet)
+    @handleStylingChange()
+
+  onAllThemesLoaded: ->
+    @refreshScrollbars()
+    @handleStylingChange()
+
+  handleStylingChange: ->
     @sampleFontStyling()
     @sampleBackgroundColors()
     @remeasureCharacterWidths()
