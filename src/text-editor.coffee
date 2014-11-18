@@ -6,7 +6,7 @@ Delegator = require 'delegato'
 {Model} = require 'theorist'
 EmitterMixin = require('emissary').Emitter
 {CompositeDisposable, Emitter} = require 'event-kit'
-{Point, Range} = require 'text-buffer'
+{Point, Range} = TextBuffer = require 'text-buffer'
 LanguageMode = require './language-mode'
 DisplayBuffer = require './display-buffer'
 Cursor = require './cursor'
@@ -84,6 +84,7 @@ class TextEditor extends Model
     @cursors = []
     @selections = []
 
+    buffer ?= new TextBuffer
     @displayBuffer ?= new DisplayBuffer({buffer, tabLength, softWrapped})
     @buffer = @displayBuffer.buffer
     @softTabs = @usesSoftTabs() ? @softTabs ? atom.config.get('editor.softTabs') ? true
@@ -2243,6 +2244,10 @@ class TextEditor extends Model
   # Returns a {Boolean} or undefined if no non-comment lines had leading
   # whitespace.
   usesSoftTabs: ->
+    # FIXME Remove once this can be specified as a scoped setting in the
+    # language-make package
+    return false if @getGrammar().scopeName is 'source.makefile'
+
     for bufferRow in [0..@buffer.getLastRow()]
       continue if @displayBuffer.tokenizedBuffer.tokenizedLineForRow(bufferRow).isComment()
 
@@ -2463,8 +2468,13 @@ class TextEditor extends Model
   copySelectedText: ->
     maintainClipboard = false
     for selection in @getSelections()
-      selection.selectLine() if selection.isEmpty()
-      selection.copy(maintainClipboard)
+      if selection.isEmpty()
+        previousRange = selection.getBufferRange()
+        selection.selectLine()
+        selection.copy(maintainClipboard)
+        selection.setBufferRange(previousRange)
+      else
+        selection.copy(maintainClipboard)
       maintainClipboard = true
 
   # Essential: For each selection, cut the selected text.
@@ -2484,22 +2494,24 @@ class TextEditor extends Model
   #
   # * `options` (optional) See {Selection::insertText}.
   pasteText: (options={}) ->
-    {text, metadata} = atom.clipboard.readWithMetadata()
+    {text: clipboardText, metadata} = atom.clipboard.readWithMetadata()
+    metadata ?= {}
+    options.autoIndent = @shouldAutoIndentOnPaste()
 
-    containsNewlines = text.indexOf('\n') isnt -1
+    @mutateSelectedText (selection, index) =>
+      if metadata.selections?.length is @getSelections().length
+        {text, indentBasis} = metadata.selections[index]
+      else
+        [text, indentBasis] = [clipboardText, metadata.indentBasis]
 
-    if metadata?.selections? and metadata.selections.length is @getSelections().length
-      @mutateSelectedText (selection, index) ->
-        text = metadata.selections[index]
-        selection.insertText(text, options)
+      delete options.indentBasis
+      {cursor} = selection
+      if indentBasis? and atom.config.get(cursor.getScopeDescriptor(), "editor.normalizeIndentOnPaste")
+        containsNewlines = text.indexOf('\n') isnt -1
+        if containsNewlines or !cursor.hasPrecedingCharactersOnLine()
+          options.indentBasis ?= indentBasis
 
-      return
-
-    else if atom.config.get(@getLastCursor().getScopeDescriptor(), "editor.normalizeIndentOnPaste") and metadata?.indentBasis?
-      if !@getLastCursor().hasPrecedingCharactersOnLine() or containsNewlines
-        options.indentBasis ?= metadata.indentBasis
-
-    @insertText(text, options)
+      selection.insertText(text, options)
 
   # Public: For each selection, if the selection is empty, cut all characters
   # of the containing line following the cursor. Otherwise cut the selected
@@ -2714,6 +2726,9 @@ class TextEditor extends Model
 
   shouldAutoIndent: ->
     atom.config.get(@getRootScopeDescriptor(), "editor.autoIndent")
+
+  shouldAutoIndentOnPaste: ->
+    atom.config.get(@getRootScopeDescriptor(), "editor.autoIndentOnPaste")
 
   shouldShowInvisibles: ->
     not @mini and atom.config.get(@getRootScopeDescriptor(), 'editor.showInvisibles')
