@@ -4,6 +4,8 @@
 {Emitter} = require 'event-kit'
 Grim = require 'grim'
 
+NonWhitespaceRegExp = /\S/
+
 # Extended: Represents a selection in the {TextEditor}.
 module.exports =
 class Selection extends Model
@@ -368,13 +370,16 @@ class Selection extends Model
       @cursor.setBufferPosition(newBufferRange.end, skipAtomicTokens: true) if wasReversed
 
     if options.autoIndent
-      @editor.autoIndentBufferRow(row) for row in newBufferRange.getRows()
+      precedingText = @editor.getTextInBufferRange([[newBufferRange.start.row, 0], newBufferRange.start])
+      unless NonWhitespaceRegExp.test(precedingText)
+        @editor.autoIndentBufferRow(newBufferRange.getRows()[0])
+      @editor.autoIndentBufferRow(row) for row, i in newBufferRange.getRows() when i > 0
     else if options.autoIndentNewline and text == '\n'
       currentIndentation = @editor.indentationForBufferRow(newBufferRange.start.row)
-      @editor.autoIndentBufferRow(newBufferRange.end.row, preserveLeadingWhitespace: true)
+      @editor.autoIndentBufferRow(newBufferRange.end.row, preserveLeadingWhitespace: true, skipBlankLines: false)
       if @editor.indentationForBufferRow(newBufferRange.end.row) < currentIndentation
         @editor.setIndentationForBufferRow(newBufferRange.end.row, currentIndentation)
-    else if options.autoDecreaseIndent and /\S/.test text
+    else if options.autoDecreaseIndent and NonWhitespaceRegExp.test(text)
       @editor.autoDecreaseIndentForBufferRow(newBufferRange.start.row)
 
     newBufferRange
@@ -553,20 +558,21 @@ class Selection extends Model
   #   current selection. (default: false)
   copy: (maintainClipboard=false) ->
     return if @isEmpty()
-    text = @editor.buffer.getTextInRange(@getBufferRange())
+    selectionText = @editor.buffer.getTextInRange(@getBufferRange())
+    selectionIndentation = @editor.indentationForBufferRow(@getBufferRange().start.row)
+
     if maintainClipboard
       {text: clipboardText, metadata} = atom.clipboard.readWithMetadata()
-
-      if metadata?.selections?
-        metadata.selections.push(text)
-      else
-        metadata = { selections: [clipboardText, text] }
-
-      text = "" + (clipboardText) + "\n" + text
+      metadata ?= {}
+      unless metadata.selections?
+        metadata.selections = [{
+          text: clipboardText,
+          indentBasis: metadata.indentBasis,
+        }]
+      metadata.selections.push(text: selectionText, indentBasis: selectionIndentation)
+      atom.clipboard.write([clipboardText, selectionText].join("\n"), metadata)
     else
-      metadata = { indentBasis: @editor.indentationForBufferRow(@getBufferRange().start.row) }
-
-    atom.clipboard.write(text, metadata)
+      atom.clipboard.write(selectionText, {indentBasis: selectionIndentation})
 
   # Public: Creates a fold containing the current selection.
   fold: ->

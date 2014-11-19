@@ -2448,7 +2448,8 @@ class TextEditor extends Model
       @commentScopeSelector.matches(scopeDescriptor)
 
   logCursorScope: ->
-    console.log @getLastCursor().getScopeDescriptor()
+    scopeDescriptor = @getLastCursor().getScopeDescriptor()
+    console.log scopeDescriptor.scopes, scopeDescriptor
 
   # {Delegates to: DisplayBuffer.tokenForBufferPosition}
   tokenForBufferPosition: (bufferPosition) -> @displayBuffer.tokenForBufferPosition(bufferPosition)
@@ -2494,20 +2495,24 @@ class TextEditor extends Model
   #
   # * `options` (optional) See {Selection::insertText}.
   pasteText: (options={}) ->
-    {text, metadata} = atom.clipboard.readWithMetadata()
+    {text: clipboardText, metadata} = atom.clipboard.readWithMetadata()
+    metadata ?= {}
+    options.autoIndent = @shouldAutoIndentOnPaste()
 
-    if metadata?.selections?.length is @getSelections().length
-      @mutateSelectedText (selection, index) ->
-        text = metadata.selections[index]
-        selection.insertText(text, options)
-      return
+    @mutateSelectedText (selection, index) =>
+      if metadata.selections?.length is @getSelections().length
+        {text, indentBasis} = metadata.selections[index]
+      else
+        [text, indentBasis] = [clipboardText, metadata.indentBasis]
 
-    if metadata?.indentBasis? and atom.config.get(@getLastCursor().getScopeDescriptor(), "editor.normalizeIndentOnPaste")
-      containsNewlines = text.indexOf('\n') isnt -1
-      if containsNewlines or !@getLastCursor().hasPrecedingCharactersOnLine()
-        options.indentBasis ?= metadata.indentBasis
+      delete options.indentBasis
+      {cursor} = selection
+      if indentBasis? and atom.config.get(cursor.getScopeDescriptor(), "editor.normalizeIndentOnPaste")
+        containsNewlines = text.indexOf('\n') isnt -1
+        if containsNewlines or !cursor.hasPrecedingCharactersOnLine()
+          options.indentBasis ?= indentBasis
 
-    @insertText(text, options)
+      selection.insertText(text, options)
 
   # Public: For each selection, if the selection is empty, cut all characters
   # of the containing line following the cursor. Otherwise cut the selected
@@ -2722,6 +2727,9 @@ class TextEditor extends Model
 
   shouldAutoIndent: ->
     atom.config.get(@getRootScopeDescriptor(), "editor.autoIndent")
+
+  shouldAutoIndentOnPaste: ->
+    atom.config.get(@getRootScopeDescriptor(), "editor.autoIndentOnPaste")
 
   shouldShowInvisibles: ->
     not @mini and atom.config.get(@getRootScopeDescriptor(), 'editor.showInvisibles')
