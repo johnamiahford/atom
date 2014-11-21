@@ -7,7 +7,7 @@ TextEditorElement = require './text-editor-element'
 TextEditorComponent = require './text-editor-component'
 {deprecate} = require 'grim'
 
-# Public: Represents the entire visual pane in Atom.
+# Deprecated: Represents the entire visual pane in Atom.
 #
 # The TextEditorView manages the {TextEditor}, which manages the file buffers.
 # `TextEditorView` is intentionally sparse. Most of the things you'll want
@@ -138,6 +138,7 @@ class TextEditorView extends View
 
   beforeRemove: ->
     @trigger 'editor:detached', [this]
+    @trigger 'editor:will-be-removed', [this]
     @attached = false
 
   remove: (selector, keepData) ->

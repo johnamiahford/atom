@@ -376,7 +376,7 @@ class Selection extends Model
       @editor.autoIndentBufferRow(row) for row, i in newBufferRange.getRows() when i > 0
     else if options.autoIndentNewline and text == '\n'
       currentIndentation = @editor.indentationForBufferRow(newBufferRange.start.row)
-      @editor.autoIndentBufferRow(newBufferRange.end.row, preserveLeadingWhitespace: true)
+      @editor.autoIndentBufferRow(newBufferRange.end.row, preserveLeadingWhitespace: true, skipBlankLines: false)
       if @editor.indentationForBufferRow(newBufferRange.end.row) < currentIndentation
         @editor.setIndentationForBufferRow(newBufferRange.end.row, currentIndentation)
     else if options.autoDecreaseIndent and NonWhitespaceRegExp.test(text)
@@ -546,8 +546,9 @@ class Selection extends Model
   # Public: Copies the selection to the clipboard and then deletes it.
   #
   # * `maintainClipboard` {Boolean} (default: false) See {::copy}
-  cut: (maintainClipboard=false) ->
-    @copy(maintainClipboard)
+  # * `fullLine` {Boolean} (default: false) See {::copy}
+  cut: (maintainClipboard=false, fullLine=false) ->
+    @copy(maintainClipboard, fullLine)
     @delete()
 
   # Public: Copies the current selection to the clipboard.
@@ -556,7 +557,10 @@ class Selection extends Model
   #   is created to store each content copied to the clipboard. The clipboard
   #   `text` still contains the concatenation of the clipboard with the
   #   current selection. (default: false)
-  copy: (maintainClipboard=false) ->
+  # * `fullLine` {Boolean} if `true`, the copied text will always be pasted
+  #   at the beginning of the line containing the cursor, regardless of the
+  #   cursor's horizontal position. (default: false)
+  copy: (maintainClipboard=false, fullLine=false) ->
     return if @isEmpty()
     selectionText = @editor.buffer.getTextInRange(@getBufferRange())
     selectionIndentation = @editor.indentationForBufferRow(@getBufferRange().start.row)
@@ -569,10 +573,17 @@ class Selection extends Model
           text: clipboardText,
           indentBasis: metadata.indentBasis,
         }]
-      metadata.selections.push(text: selectionText, indentBasis: selectionIndentation)
+      metadata.selections.push({
+        text: selectionText,
+        indentBasis: selectionIndentation,
+        fullLine: fullLine
+      })
       atom.clipboard.write([clipboardText, selectionText].join("\n"), metadata)
     else
-      atom.clipboard.write(selectionText, {indentBasis: selectionIndentation})
+      atom.clipboard.write(selectionText, {
+        indentBasis: selectionIndentation,
+        fullLine: fullLine
+      })
 
   # Public: Creates a fold containing the current selection.
   fold: ->

@@ -2448,7 +2448,8 @@ class TextEditor extends Model
       @commentScopeSelector.matches(scopeDescriptor)
 
   logCursorScope: ->
-    console.log @getLastCursor().getScopeDescriptor()
+    scopeDescriptor = @getLastCursor().getScopeDescriptor()
+    console.log scopeDescriptor.scopes, scopeDescriptor
 
   # {Delegates to: DisplayBuffer.tokenForBufferPosition}
   tokenForBufferPosition: (bufferPosition) -> @displayBuffer.tokenForBufferPosition(bufferPosition)
@@ -2471,18 +2472,21 @@ class TextEditor extends Model
       if selection.isEmpty()
         previousRange = selection.getBufferRange()
         selection.selectLine()
-        selection.copy(maintainClipboard)
+        selection.copy(maintainClipboard, true)
         selection.setBufferRange(previousRange)
       else
-        selection.copy(maintainClipboard)
+        selection.copy(maintainClipboard, false)
       maintainClipboard = true
 
   # Essential: For each selection, cut the selected text.
   cutSelectedText: ->
     maintainClipboard = false
     @mutateSelectedText (selection) ->
-      selection.selectLine() if selection.isEmpty()
-      selection.cut(maintainClipboard)
+      if selection.isEmpty()
+        selection.selectLine()
+        selection.cut(maintainClipboard, true)
+      else
+        selection.cut(maintainClipboard, false)
       maintainClipboard = true
 
   # Essential: For each selection, replace the selected text with the contents of
@@ -2500,18 +2504,26 @@ class TextEditor extends Model
 
     @mutateSelectedText (selection, index) =>
       if metadata.selections?.length is @getSelections().length
-        {text, indentBasis} = metadata.selections[index]
+        {text, indentBasis, fullLine} = metadata.selections[index]
       else
-        [text, indentBasis] = [clipboardText, metadata.indentBasis]
+        {indentBasis, fullLine} = metadata
+        text = clipboardText
 
       delete options.indentBasis
       {cursor} = selection
-      if indentBasis? and atom.config.get(cursor.getScopeDescriptor(), "editor.normalizeIndentOnPaste")
+      if indentBasis?
         containsNewlines = text.indexOf('\n') isnt -1
         if containsNewlines or !cursor.hasPrecedingCharactersOnLine()
           options.indentBasis ?= indentBasis
 
-      selection.insertText(text, options)
+      if fullLine and selection.isEmpty()
+        oldPosition = selection.getBufferRange().start
+        selection.setBufferRange([[oldPosition.row, 0], [oldPosition.row, 0]])
+        selection.insertText(text, options)
+        newPosition = oldPosition.translate([1, 0])
+        selection.setBufferRange([newPosition, newPosition])
+      else
+        selection.insertText(text, options)
 
   # Public: For each selection, if the selection is empty, cut all characters
   # of the containing line following the cursor. Otherwise cut the selected

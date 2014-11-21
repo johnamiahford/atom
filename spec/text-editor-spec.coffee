@@ -2611,10 +2611,9 @@ describe "TextEditor", ->
               console.log JSON.stringify(editor.lineTextForBufferRow(1))
               expect(editor.lineTextForBufferRow(1)).toBe("    y(); z();")
 
-        describe "when `autoIndentOnPaste` is false and `normalizeIndentOnPaste` is true", ->
+        describe "when `autoIndentOnPaste` is false", ->
           beforeEach ->
             atom.config.set('editor.autoIndentOnPaste', false)
-            atom.config.set('editor.normalizeIndentOnPaste', true)
 
           describe "when the inserted text contains no newlines", ->
             it "does not adjust the indentation level of the text", ->
@@ -2672,58 +2671,6 @@ describe "TextEditor", ->
                 expect(editor.lineTextForBufferRow(3)).toBe "  }"
                 expect(editor.lineTextForBufferRow(4)).toBe ""
 
-          describe 'when scoped settings are used', ->
-            coffeeEditor = null
-            beforeEach ->
-              waitsForPromise ->
-                atom.packages.activatePackage('language-coffee-script')
-              waitsForPromise ->
-                atom.project.open('coffee.coffee', autoIndent: false).then (o) ->
-                  coffeeEditor = o
-
-              runs ->
-                atom.config.set('.source.js', 'editor.normalizeIndentOnPaste', true)
-                atom.config.set('.source.coffee', 'editor.normalizeIndentOnPaste', false)
-
-            afterEach: ->
-              atom.packages.deactivatePackages()
-              atom.packages.unloadPackages()
-
-            it "normalizes the indentation level based on scoped settings", ->
-              copyText("    while (true) {\n      foo();\n    }\n", {startColumn: 2, textEditor: coffeeEditor})
-              coffeeEditor.setCursorBufferPosition([4, 4])
-              coffeeEditor.pasteText()
-              expect(coffeeEditor.lineTextForBufferRow(4)).toBe "      while (true) {"
-              expect(coffeeEditor.lineTextForBufferRow(5)).toBe "      foo();"
-              expect(coffeeEditor.lineTextForBufferRow(6)).toBe "    }"
-
-              copyText("    while (true) {\n      foo();\n    }\n", {startColumn: 2})
-              editor.setCursorBufferPosition([3, 4])
-              editor.pasteText()
-              expect(editor.lineTextForBufferRow(3)).toBe "    while (true) {"
-              expect(editor.lineTextForBufferRow(4)).toBe "      foo();"
-              expect(editor.lineTextForBufferRow(5)).toBe "    }"
-
-        describe "when `autoIndentOnPaste` and `normalizeIndentOnPaste` are both false", ->
-          beforeEach ->
-            atom.config.set('editor.normalizeIndentOnPaste', false)
-            atom.config.set("editor.autoIndentOnPaste", false)
-
-          it "does not auto-indent the pasted text", ->
-            atom.clipboard.write("console.log(x);\nconsole.log(y);\n")
-            editor.setCursorBufferPosition([5, 0])
-            editor.pasteText()
-            expect(editor.lineTextForBufferRow(5)).toBe("console.log(x);")
-            expect(editor.lineTextForBufferRow(6)).toBe("console.log(y);")
-
-          it "does not normalize the indentation level of the text", ->
-            copyText("   function() {\nvar cool = 1;\n  }\n")
-            editor.setCursorBufferPosition([5, 2])
-            editor.pasteText()
-            expect(editor.lineTextForBufferRow(5)).toBe "     function() {"
-            expect(editor.lineTextForBufferRow(6)).toBe "var cool = 1;"
-            expect(editor.lineTextForBufferRow(7)).toBe "  }"
-
         describe 'when the clipboard has many selections', ->
           beforeEach ->
             atom.config.set("editor.autoIndentOnPaste", false)
@@ -2746,6 +2693,39 @@ describe "TextEditor", ->
               editor.pasteText()
               expect(editor.lineTextForBufferRow(0)).toBe "var quicksort"
               expect(editor.lineTextForBufferRow(1)).toBe "sort = function () {"
+
+        describe "when a full line was cut", ->
+          beforeEach ->
+            editor.setCursorBufferPosition([2, 13])
+            editor.cutSelectedText()
+            editor.setCursorBufferPosition([2, 13])
+
+          it "pastes the line above the cursor and retains the cursor's column", ->
+            editor.pasteText()
+            expect(editor.lineTextForBufferRow(2)).toBe("    if (items.length <= 1) return items;")
+            expect(editor.lineTextForBufferRow(3)).toBe("    var pivot = items.shift(), current, left = [], right = [];")
+            expect(editor.getCursorBufferPosition()).toEqual([3, 13])
+
+        describe "when a full line was copied", ->
+          beforeEach ->
+            editor.setCursorBufferPosition([2, 13])
+            editor.copySelectedText()
+
+          describe "when there is a selection", ->
+            it "overwrites the selection as with any copied text", ->
+              editor.setSelectedBufferRange([[1, 2], [1, Infinity]])
+              editor.pasteText()
+              expect(editor.lineTextForBufferRow(1)).toBe("  if (items.length <= 1) return items;")
+              expect(editor.lineTextForBufferRow(2)).toBe("  ")
+              expect(editor.lineTextForBufferRow(3)).toBe("    if (items.length <= 1) return items;")
+              expect(editor.getCursorBufferPosition()).toEqual([2, 2])
+
+          describe "when there is no selection", ->
+            it "pastes the line above the cursor and retains the cursor's column", ->
+              editor.pasteText()
+              expect(editor.lineTextForBufferRow(2)).toBe("    if (items.length <= 1) return items;")
+              expect(editor.lineTextForBufferRow(3)).toBe("    if (items.length <= 1) return items;")
+              expect(editor.getCursorBufferPosition()).toEqual([3, 13])
 
     describe ".indentSelectedRows()", ->
       describe "when nothing is selected", ->
@@ -3377,17 +3357,17 @@ describe "TextEditor", ->
     it "switches to the better-matched grammar and re-tokenizes the buffer", ->
       editor.destroy()
 
-      jsGrammar = atom.syntax.selectGrammar('a.js')
-      atom.syntax.removeGrammar(jsGrammar)
+      jsGrammar = atom.grammars.selectGrammar('a.js')
+      atom.grammars.removeGrammar(jsGrammar)
 
       waitsForPromise ->
         atom.workspace.open('sample.js', autoIndent: false).then (o) -> editor = o
 
       runs ->
-        expect(editor.getGrammar()).toBe atom.syntax.nullGrammar
+        expect(editor.getGrammar()).toBe atom.grammars.nullGrammar
         expect(editor.tokenizedLineForScreenRow(0).tokens.length).toBe 1
 
-        atom.syntax.addGrammar(jsGrammar)
+        atom.grammars.addGrammar(jsGrammar)
         expect(editor.getGrammar()).toBe jsGrammar
         expect(editor.tokenizedLineForScreenRow(0).tokens.length).toBeGreaterThan 1
 
@@ -3437,6 +3417,16 @@ describe "TextEditor", ->
             editor.setCursorBufferPosition([0, Infinity])
             editor.insertText('\n')
             expect(editor.indentationForBufferRow(1)).toBe 2
+
+        describe "when the line preceding the newline contains only whitespace", ->
+          it "bases the new line's indentation on only the preceding line", ->
+            editor.setCursorBufferPosition([6, Infinity])
+            editor.insertText("\n  ")
+            expect(editor.getCursorBufferPosition()).toEqual([7, 2])
+
+            editor.insertNewline()
+            editor.logScreenLines()
+            expect(editor.lineTextForBufferRow(8)).toBe("  ")
 
         it "does not indent the line preceding the newline", ->
           editor.setCursorBufferPosition([2, 0])
@@ -3797,7 +3787,7 @@ describe "TextEditor", ->
 
     it "updates the grammar based on grammar overrides", ->
       expect(editor.getGrammar().name).toBe 'JavaScript'
-      atom.syntax.setGrammarOverrideForPath(editor.getPath(), 'source.coffee')
+      atom.grammars.setGrammarOverrideForPath(editor.getPath(), 'source.coffee')
       editor.reloadGrammar()
       expect(editor.getGrammar().name).toBe 'CoffeeScript'
 
@@ -3815,7 +3805,7 @@ describe "TextEditor", ->
         atom.packages.activatePackage('language-hyperlink')
 
       runs ->
-        grammar = atom.syntax.selectGrammar("text.js")
+        grammar = atom.grammars.selectGrammar("text.js")
         {tokens} = grammar.tokenizeLine("var i; // http://github.com")
 
         expect(tokens[0].value).toBe "var"

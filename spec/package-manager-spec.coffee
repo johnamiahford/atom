@@ -2,8 +2,9 @@
 Package = require '../src/package'
 
 describe "PackageManager", ->
+  workspaceElement = null
   beforeEach ->
-    atom.workspaceView = atom.views.getView(atom.workspace).__spacePenView
+    workspaceElement = atom.views.getView(atom.workspace)
 
   describe "::loadPackage(name)", ->
     it "continues if the package has an invalid package.json", ->
@@ -111,7 +112,7 @@ describe "PackageManager", ->
           [mainModule, promise, workspaceCommandListener] = []
 
           beforeEach ->
-            atom.workspaceView.attachToDom()
+            jasmine.attachToDOM(workspaceElement)
             mainModule = require './fixtures/packages/package-with-activation-commands/index'
             mainModule.legacyActivationCommandCallCount = 0
             mainModule.activationCommandCallCount = 0
@@ -125,29 +126,29 @@ describe "PackageManager", ->
 
           it "defers requiring/activating the main module until an activation event bubbles to the root view", ->
             expect(promise.isFulfilled()).not.toBeTruthy()
-            atom.workspaceView[0].dispatchEvent(new CustomEvent('activation-command', bubbles: true))
+            workspaceElement.dispatchEvent(new CustomEvent('activation-command', bubbles: true))
 
             waitsForPromise ->
               promise
 
           it "triggers the activation event on all handlers registered during activation", ->
             waitsForPromise ->
-              atom.workspaceView.open()
+              atom.workspace.open()
 
             runs ->
-              editorView = atom.workspaceView.getActiveView()
+              editorView = atom.views.getView(atom.workspace.getActiveEditor()).__spacePenView
               legacyCommandListener = jasmine.createSpy("legacyCommandListener")
               editorView.command 'activation-command', legacyCommandListener
               editorCommandListener = jasmine.createSpy("editorCommandListener")
               atom.commands.add 'atom-text-editor', 'activation-command', editorCommandListener
-              editorView[0].dispatchEvent(new CustomEvent('activation-command', bubbles: true))
+              atom.commands.dispatch(editorView[0], 'activation-command')
               expect(mainModule.activate.callCount).toBe 1
               expect(mainModule.legacyActivationCommandCallCount).toBe 1
               expect(mainModule.activationCommandCallCount).toBe 1
               expect(legacyCommandListener.callCount).toBe 1
               expect(editorCommandListener.callCount).toBe 1
               expect(workspaceCommandListener.callCount).toBe 1
-              editorView[0].dispatchEvent(new CustomEvent('activation-command', bubbles: true))
+              atom.commands.dispatch(editorView[0], 'activation-command')
               expect(mainModule.legacyActivationCommandCallCount).toBe 2
               expect(mainModule.activationCommandCallCount).toBe 2
               expect(legacyCommandListener.callCount).toBe 2
@@ -349,8 +350,8 @@ describe "PackageManager", ->
             atom.packages.activatePackage('package-with-grammars')
 
           runs ->
-            expect(atom.syntax.selectGrammar('a.alot').name).toBe 'Alot'
-            expect(atom.syntax.selectGrammar('a.alittle').name).toBe 'Alittle'
+            expect(atom.grammars.selectGrammar('a.alot').name).toBe 'Alot'
+            expect(atom.grammars.selectGrammar('a.alittle').name).toBe 'Alittle'
 
       describe "scoped-property loading", ->
         it "loads the scoped properties", ->
@@ -362,13 +363,13 @@ describe "PackageManager", ->
 
     describe "converted textmate packages", ->
       it "loads the package's grammars", ->
-        expect(atom.syntax.selectGrammar("file.rb").name).toBe "Null Grammar"
+        expect(atom.grammars.selectGrammar("file.rb").name).toBe "Null Grammar"
 
         waitsForPromise ->
           atom.packages.activatePackage('language-ruby')
 
         runs ->
-          expect(atom.syntax.selectGrammar("file.rb").name).toBe "Ruby"
+          expect(atom.grammars.selectGrammar("file.rb").name).toBe "Ruby"
 
       it "loads the translated scoped properties", ->
         expect(atom.config.get(['.source.ruby'], 'editor.commentStart')).toBeUndefined()
@@ -454,8 +455,8 @@ describe "PackageManager", ->
 
         runs ->
           atom.packages.deactivatePackage('package-with-grammars')
-          expect(atom.syntax.selectGrammar('a.alot').name).toBe 'Null Grammar'
-          expect(atom.syntax.selectGrammar('a.alittle').name).toBe 'Null Grammar'
+          expect(atom.grammars.selectGrammar('a.alot').name).toBe 'Null Grammar'
+          expect(atom.grammars.selectGrammar('a.alittle').name).toBe 'Null Grammar'
 
       it "removes the package's keymaps", ->
         waitsForPromise ->
@@ -490,15 +491,15 @@ describe "PackageManager", ->
 
     describe "textmate packages", ->
       it "removes the package's grammars", ->
-        expect(atom.syntax.selectGrammar("file.rb").name).toBe "Null Grammar"
+        expect(atom.grammars.selectGrammar("file.rb").name).toBe "Null Grammar"
 
         waitsForPromise ->
           atom.packages.activatePackage('language-ruby')
 
         runs ->
-          expect(atom.syntax.selectGrammar("file.rb").name).toBe "Ruby"
+          expect(atom.grammars.selectGrammar("file.rb").name).toBe "Ruby"
           atom.packages.deactivatePackage('language-ruby')
-          expect(atom.syntax.selectGrammar("file.rb").name).toBe "Null Grammar"
+          expect(atom.grammars.selectGrammar("file.rb").name).toBe "Null Grammar"
 
       it "removes the package's scoped properties", ->
         waitsForPromise ->
@@ -526,8 +527,8 @@ describe "PackageManager", ->
       atom.packages.deactivatePackages()
       atom.packages.unloadPackages()
 
-      Syntax = require '../src/syntax'
-      atom.syntax = window.syntax = new Syntax()
+      GrammarRegistry = require '../src/grammar-registry'
+      atom.grammars = window.syntax = new GrammarRegistry()
 
     it "activates all the packages, and none of the themes", ->
       atom.packages.activate()

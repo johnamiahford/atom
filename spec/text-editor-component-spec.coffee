@@ -2532,7 +2532,7 @@ describe "TextEditorComponent", ->
   describe "grammar data attributes", ->
     it "adds and updates the grammar data attribute based on the current grammar", ->
       expect(wrapperNode.dataset.grammar).toBe 'source js'
-      editor.setGrammar(atom.syntax.nullGrammar)
+      editor.setGrammar(atom.grammars.nullGrammar)
       expect(wrapperNode.dataset.grammar).toBe 'text plain null-grammar'
 
   describe "encoding data attributes", ->
@@ -2686,6 +2686,10 @@ describe "TextEditorComponent", ->
 
   describe "middle mouse paste on Linux", ->
     it "pastes the previously selected text", ->
+      spyOn(require('ipc'), 'send').andCallFake (eventName, selectedText) ->
+        if eventName is 'write-text-to-selection-clipboard'
+          require('clipboard').writeText(selectedText, 'selection')
+
       atom.clipboard.write('')
       component.listenForMiddleMousePaste()
 

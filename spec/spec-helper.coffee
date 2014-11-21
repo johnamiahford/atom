@@ -82,7 +82,7 @@ beforeEach ->
   serializedWindowState = null
 
   spyOn(atom, 'saveSync')
-  atom.syntax.clearGrammarOverrides()
+  atom.grammars.clearGrammarOverrides()
 
   spy = spyOn(atom.packages, 'resolvePackagePath').andCallFake (packageName) ->
     if specPackageName and packageName is specPackageName
@@ -135,8 +135,9 @@ afterEach ->
   atom.menu.template = []
   atom.contextMenu.clear()
 
-  atom.workspaceView?.remove?()
-  atom.workspaceView = null
+  atom.workspace?.destroy()
+  atom.workspace = null
+  atom.__workspaceView = null
   delete atom.state.workspace
 
   atom.project?.destroy()
@@ -150,7 +151,7 @@ afterEach ->
 
   jasmine.unspy(atom, 'saveSync')
   ensureNoPathSubscriptions()
-  atom.syntax.clearObservers()
+  atom.grammars.clearObservers()
   waits(0) # yield to ui thread to make screen update more frequently
 
 ensureNoPathSubscriptions = ->
@@ -190,6 +191,10 @@ jasmine.StringPrettyPrinter.prototype.emitObject = (obj) ->
 jasmine.unspy = (object, methodName) ->
   throw new Error("Not a spy") unless object[methodName].hasOwnProperty('originalValue')
   object[methodName] = object[methodName].originalValue
+
+jasmine.attachToDOM = (element) ->
+  jasmineContent = document.querySelector('#jasmine-content')
+  jasmineContent.appendChild(element) unless jasmineContent.contains(element)
 
 addCustomMatchers = (spec) ->
   spec.addMatchers

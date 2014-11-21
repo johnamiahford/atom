@@ -6,6 +6,7 @@ scrollbarStyle = require 'scrollbar-style'
 {Range, Point} = require 'text-buffer'
 grim = require 'grim'
 {CompositeDisposable} = require 'event-kit'
+ipc = require 'ipc'
 
 GutterComponent = require './gutter-component'
 InputComponent = require './input-component'
@@ -198,7 +199,6 @@ TextEditorComponent = React.createClass
   componentWillUnmount: ->
     {editor, hostElement} = @props
 
-    hostElement.__spacePenView.trigger 'editor:will-be-removed', [hostElement.__spacePenView]
     @unsubscribe()
     @scopedConfigSubscriptions.dispose()
     window.removeEventListener 'resize', @requestHeightAndWidthMeasurement
@@ -444,7 +444,10 @@ TextEditorComponent = React.createClass
 
     @subscribe @props.editor.onDidChangeSelectionRange =>
       if selectedText = @props.editor.getSelectedText()
-        clipboard.writeText(selectedText, 'selection')
+        # This uses ipc.send instead of clipboard.writeText because
+        # clipboard.writeText is a sync ipc call on Linux and that
+        # will slow down selections.
+        ipc.send('write-text-to-selection-clipboard', selectedText)
 
   observeConfig: ->
     @subscribe atom.config.observe 'editor.useHardwareAcceleration', @setUseHardwareAcceleration
