@@ -146,6 +146,9 @@ class Atom extends Model
   # Public: A {TooltipManager} instance
   tooltips: null
 
+  # Experimental: A {NotificationManager} instance
+  notifications: null
+
   # Public: A {Project} instance
   project: null
 
@@ -220,6 +223,7 @@ class Atom extends Model
     ViewRegistry = require './view-registry'
     CommandRegistry = require './command-registry'
     TooltipManager = require './tooltip-manager'
+    NotificationManager = require './notification-manager'
     PackageManager = require './package-manager'
     Clipboard = require './clipboard'
     GrammarRegistry = require './grammar-registry'
@@ -245,7 +249,9 @@ class Atom extends Model
     @config = new Config({configDirPath, resourcePath})
     @keymaps = new KeymapManager({configDirPath, resourcePath})
     @keymap = @keymaps # Deprecated
+    @keymaps.subscribeToFileReadFailure()
     @tooltips = new TooltipManager
+    @notifications = new NotificationManager
     @commands = new CommandRegistry
     @views = new ViewRegistry
     @packages = new PackageManager({devMode, configDirPath, resourcePath, safeMode})
@@ -776,6 +782,12 @@ class Atom extends Model
         delete window[key]
       else
         window[key] = value
+
+  onUpdateAvailable: (callback) ->
+    @emitter.on 'update-available', callback
+
+  updateAvailable: (details) ->
+    @emitter.emit 'update-available', details
 
   # Deprecated: Callers should be converted to use atom.deserializers
   registerRepresentationClass: ->

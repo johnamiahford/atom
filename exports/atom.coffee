@@ -6,6 +6,7 @@ module.exports =
   BufferedNodeProcess: require '../src/buffered-node-process'
   BufferedProcess: require '../src/buffered-process'
   GitRepository: require '../src/git-repository'
+  Notification: require '../src/notification'
   Point: Point
   Range: Range
   Emitter: Emitter
@@ -32,7 +33,7 @@ unless process.env.ATOM_SHELL_INTERNAL_RUN_AS_NODE
   Object.defineProperty module.exports, 'WorkspaceView', get: ->
     deprecate """
       Requiring `WorkspaceView` from `atom` is no longer supported.
-      Use `atom.view.getView(atom.workspace)` instead.
+      Use `atom.views.getView(atom.workspace)` instead.
     """
     require '../src/workspace-view'
 
@@ -43,7 +44,7 @@ unless process.env.ATOM_SHELL_INTERNAL_RUN_AS_NODE
         `{$} = require 'space-pen'`
         or
         `$ = require 'jquery'`
-      Add `"space-pen": "^3"` to your package dependencies.
+      Add `"space-pen": "^4"` to your package dependencies.
       Or add `"jquery": "^2"` to your package dependencies.
     """
     $
@@ -53,7 +54,7 @@ unless process.env.ATOM_SHELL_INTERNAL_RUN_AS_NODE
       Requiring `$$` from `atom` is no longer supported.
       Please require `space-pen` instead:
         `{$$} = require 'space-pen'`
-      Add `"space-pen": "^3"` to your package dependencies.
+      Add `"space-pen": "^4"` to your package dependencies.
     """
     $$
 
@@ -62,7 +63,7 @@ unless process.env.ATOM_SHELL_INTERNAL_RUN_AS_NODE
       Requiring `$$$` from `atom` is no longer supported.
       Please require `space-pen` instead:
         `{$$$} = require 'space-pen'`
-      Add `"space-pen": "^3"` to your package dependencies.
+      Add `"space-pen": "^4"` to your package dependencies.
     """
     $$$
 
@@ -71,7 +72,7 @@ unless process.env.ATOM_SHELL_INTERNAL_RUN_AS_NODE
       Requiring `View` from `atom` is no longer supported.
       Please require `space-pen` instead:
         `{View} = require 'space-pen'`
-      Add `"space-pen": "^3"` to your package dependencies.
+      Add `"space-pen": "^4"` to your package dependencies.
     """
     View
 
@@ -118,8 +119,8 @@ unless process.env.ATOM_SHELL_INTERNAL_RUN_AS_NODE
     require 'react-atom-fork'
 
   Object.defineProperty module.exports, 'Reactionary', get: ->
-    deprecate "Please require `reactionary` instead: `Reactionary = require 'reactionary'`. Add `\"reactionary\": \"^0.9\"` to your package dependencies."
-    require 'reactionary'
+    deprecate "Please require `reactionary-atom-fork` instead: `Reactionary = require 'reactionary-atom-fork'`. Add `\"reactionary-atom-fork\": \"^0.9\"` to your package dependencies."
+    require 'reactionary-atom-fork'
 
 Object.defineProperty module.exports, 'Git', get: ->
   deprecate "Please require `GitRepository` instead of `Git`: `{GitRepository} = require 'atom'`"

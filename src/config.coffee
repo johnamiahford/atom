@@ -526,6 +526,9 @@ class Config
 
   # Extended: Restore the global setting at `keyPath` to its default value.
   #
+  # * `scopeSelector` (optional) {String}. eg. '.source.ruby'
+  #   See [the scopes docs](https://atom.io/docs/latest/advanced/scopes-and-scope-descriptors)
+  #   for more information.
   # * `keyPath` The {String} name of the key.
   #
   # Returns the new value.
@@ -721,20 +724,25 @@ class Config
       @configFileHasErrors = false
     catch error
       @configFileHasErrors = true
-      console.error "Failed to load user config '#{@configFilePath}'", error.message
-      console.error error.stack
+      @notifyFailure('Failed to load config.cson', error)
 
   observeUserConfig: ->
     try
       @watchSubscription ?= pathWatcher.watch @configFilePath, (eventType) =>
         @loadUserConfig() if eventType is 'change' and @watchSubscription?
     catch error
-      console.error "Failed to watch user config '#{@configFilePath}'", error.message
-      console.error error.stack
+      @notifyFailure('Failed to watch user config', error)
 
   unobserveUserConfig: ->
     @watchSubscription?.close()
     @watchSubscription = null
+
+  notifyFailure: (errorMessage, error) ->
+    message = "#{errorMessage}"
+    detail = error.stack
+    atom.notifications.addError(message, {detail, closable: true})
+    console.error message
+    console.error detail
 
   save: ->
     allSettings = global: @settings

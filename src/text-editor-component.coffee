@@ -20,9 +20,6 @@ TextEditorComponent = React.createClass
   displayName: 'TextEditorComponent'
   mixins: [SubscriberMixin]
 
-  statics:
-    performSyncUpdates: false
-
   visible: false
   autoHeight: false
   backgroundColor: null
@@ -242,7 +239,7 @@ TextEditorComponent = React.createClass
       @updateRequestedWhilePaused = true
       return
 
-    if @performSyncUpdates ? TextEditorComponent.performSyncUpdates
+    if @props.hostElement.isUpdatedSynchronously()
       @forceUpdate()
     else unless @updateRequested
       @updateRequested = true
@@ -363,14 +360,16 @@ TextEditorComponent = React.createClass
     filteredDecorations = {}
     for markerId, decorations of decorationsByMarkerId
       marker = editor.getMarker(markerId)
-      headBufferPosition = marker.getHeadBufferPosition()
+      headScreenPosition = marker.getHeadScreenPosition()
+      tailScreenPosition = marker.getTailScreenPosition()
       if marker.isValid()
         for decoration in decorations
           if decoration.isType('overlay')
             decorationParams = decoration.getProperties()
             filteredDecorations[markerId] ?=
               id: markerId
-              headPixelPosition: editor.pixelPositionForScreenPosition(headBufferPosition)
+              headPixelPosition: editor.pixelPositionForScreenPosition(headScreenPosition)
+              tailPixelPosition: editor.pixelPositionForScreenPosition(tailScreenPosition)
               decorations: []
             filteredDecorations[markerId].decorations.push decorationParams
     filteredDecorations

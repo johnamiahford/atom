@@ -37,9 +37,9 @@ describe "TextEditorComponent", ->
       wrapperView = new TextEditorView(editor, {lineOverdrawMargin})
       wrapperView.attachToDom()
       wrapperNode = wrapperView.element
+      wrapperNode.setUpdatedSynchronously(false)
 
       {component} = wrapperView
-      component.performSyncUpdates = false
       component.setFontFamily('monospace')
       component.setLineHeight(1.3)
       component.setFontSize(20)
@@ -302,7 +302,7 @@ describe "TextEditorComponent", ->
 
       it "interleaves invisible line-ending characters with indent guides on empty lines", ->
         component.setShowIndentGuide(true)
-        editor.setTextInBufferRange([[10, 0], [11, 0]], "\r\n", false)
+        editor.setTextInBufferRange([[10, 0], [11, 0]], "\r\n", normalizeLineEndings: false)
         nextAnimationFrame()
         expect(component.lineNodeForScreenRow(10).innerHTML).toBe '<span class="indent-guide"><span class="invisible-character">C</span><span class="invisible-character">E</span></span>'
 
@@ -1247,7 +1247,7 @@ describe "TextEditorComponent", ->
         expect(overlay.style.top).toBe position.top + editor.getLineHeightInPixels() + 'px'
 
     describe "when the marker is not empty", ->
-      it "renders at the head of the marker", ->
+      it "renders at the head of the marker by default", ->
         marker = editor.displayBuffer.markBufferRange([[2, 5], [2, 10]], invalidate: 'never')
         decoration = editor.decorateMarker(marker, {type: 'overlay', item})
         nextAnimationFrame()
@@ -1261,6 +1261,17 @@ describe "TextEditorComponent", ->
       it "renders at the head of the marker when the marker is reversed", ->
         marker = editor.displayBuffer.markBufferRange([[2, 5], [2, 10]], invalidate: 'never', reversed: true)
         decoration = editor.decorateMarker(marker, {type: 'overlay', item})
+        nextAnimationFrame()
+
+        position = editor.pixelPositionForBufferPosition([2, 5])
+
+        overlay = component.getTopmostDOMNode().querySelector('atom-overlay')
+        expect(overlay.style.left).toBe position.left + 'px'
+        expect(overlay.style.top).toBe position.top + editor.getLineHeightInPixels() + 'px'
+
+      it "renders at the tail of the marker when the 'position' option is 'tail'", ->
+        marker = editor.displayBuffer.markBufferRange([[2, 5], [2, 10]], invalidate: 'never')
+        decoration = editor.decorateMarker(marker, {type: 'overlay', position: 'tail', item})
         nextAnimationFrame()
 
         position = editor.pixelPositionForBufferPosition([2, 5])

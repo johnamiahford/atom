@@ -43,6 +43,19 @@ describe "PanelContainerElement", ->
     expect(element.parentNode).not.toBe jasmineContent
 
   describe "adding and removing panels", ->
+    it "allows panels to be inserted at any position", ->
+      panel1 = new Panel({viewRegistry, item: new TestPanelContainerItem(), priority: 10})
+      panel2 = new Panel({viewRegistry, item: new TestPanelContainerItem(), priority: 5})
+      panel3 = new Panel({viewRegistry, item: new TestPanelContainerItem(), priority: 8})
+
+      container.addPanel(panel1)
+      container.addPanel(panel2)
+      container.addPanel(panel3)
+
+      expect(element.childNodes[2].getModel()).toBe(panel1)
+      expect(element.childNodes[1].getModel()).toBe(panel3)
+      expect(element.childNodes[0].getModel()).toBe(panel2)
+
     describe "when the container is at the left location", ->
       it "adds atom-panel elements when a new panel is added to the container; removes them when the panels are destroyed", ->
         expect(element.childNodes.length).toBe 0
@@ -51,6 +64,8 @@ describe "PanelContainerElement", ->
         container.addPanel(panel1)
         expect(element.childNodes.length).toBe 1
         expect(element.childNodes[0]).toHaveClass 'left'
+        expect(element.childNodes[0]).toHaveClass 'tool-panel' # legacy selector support
+        expect(element.childNodes[0]).toHaveClass 'panel-left' # legacy selector support
 
         expect(element.childNodes[0].tagName).toBe 'ATOM-PANEL'
 
@@ -80,6 +95,8 @@ describe "PanelContainerElement", ->
         container.addPanel(panel1)
         expect(element.childNodes.length).toBe 1
         expect(element.childNodes[0]).toHaveClass 'bottom'
+        expect(element.childNodes[0]).toHaveClass 'tool-panel' # legacy selector support
+        expect(element.childNodes[0]).toHaveClass 'panel-bottom' # legacy selector support
         expect(element.childNodes[0].tagName).toBe 'ATOM-PANEL'
         expect(panel1.getView()).toHaveClass 'one'
 
@@ -116,3 +133,14 @@ describe "PanelContainerElement", ->
 
       expect(panel1.getView().style.display).not.toBe 'none'
       expect(panel2.getView().style.display).toBe 'none'
+
+    it "adds the 'modal' class to panels", ->
+      panel1 = new Panel({viewRegistry, item: new TestPanelContainerItem()})
+      container.addPanel(panel1)
+
+      expect(panel1.getView()).toHaveClass 'modal'
+
+      # legacy selector support
+      expect(panel1.getView()).not.toHaveClass 'tool-panel'
+      expect(panel1.getView()).toHaveClass 'overlay'
+      expect(panel1.getView()).toHaveClass 'from-top'
