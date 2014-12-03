@@ -4,7 +4,6 @@ _ = require 'underscore-plus'
 {Model} = require 'theorist'
 Q = require 'q'
 Serializable = require 'serializable'
-Delegator = require 'delegato'
 {Emitter, Disposable, CompositeDisposable} = require 'event-kit'
 Grim = require 'grim'
 TextEditor = require './text-editor'
@@ -14,7 +13,6 @@ Panel = require './panel'
 PanelElement = require './panel-element'
 PanelContainer = require './panel-container'
 PanelContainerElement = require './panel-container-element'
-ViewRegistry = require './view-registry'
 WorkspaceElement = require './workspace-element'
 
 # Essential: Represents the state of the user interface for the entire window.
@@ -31,10 +29,17 @@ class Workspace extends Model
   atom.deserializers.add(this)
   Serializable.includeInto(this)
 
-  @delegatesProperty 'activePane', 'activePaneItem', toProperty: 'paneContainer'
+  Object.defineProperty @::, 'activePaneItem',
+    get: ->
+      Grim.deprecate "Use ::getActivePaneItem() instead of the ::activePaneItem property"
+      @getActivePaneItem()
+
+  Object.defineProperty @::, 'activePane',
+    get: ->
+      Grim.deprecate "Use ::getActivePane() instead of the ::activePane property"
+      @getActivePane()
 
   @properties
-    viewRegistry: null
     paneContainer: null
     fullScreen: false
     destroyedItemUris: -> []
@@ -45,16 +50,15 @@ class Workspace extends Model
     @emitter = new Emitter
     @openers = []
 
-    viewRegistry = atom.views
-    @paneContainer ?= new PaneContainer({viewRegistry})
-    @paneContainer.onDidDestroyPaneItem(@onPaneItemDestroyed)
+    @paneContainer ?= new PaneContainer()
+    @paneContainer.onDidDestroyPaneItem(@didDestroyPaneItem)
 
     @panelContainers =
-      top: new PanelContainer({viewRegistry, location: 'top'})
-      left: new PanelContainer({viewRegistry, location: 'left'})
-      right: new PanelContainer({viewRegistry, location: 'right'})
-      bottom: new PanelContainer({viewRegistry, location: 'bottom'})
-      modal: new PanelContainer({viewRegistry, location: 'modal'})
+      top: new PanelContainer({location: 'top'})
+      left: new PanelContainer({location: 'left'})
+      right: new PanelContainer({location: 'right'})
+      bottom: new PanelContainer({location: 'bottom'})
+      modal: new PanelContainer({location: 'modal'})
 
     @subscribeToActiveItem()
 
@@ -69,24 +73,20 @@ class Workspace extends Model
         when 'atom://.atom/init-script'
           @open(atom.getUserInitScriptPath())
 
-    atom.views.addViewProvider
-      modelConstructor: Workspace
-      viewConstructor: WorkspaceElement
+    atom.views.addViewProvider Workspace, (model) ->
+      new WorkspaceElement().initialize(model)
 
-    atom.views.addViewProvider
-      modelConstructor: PanelContainer
-      viewConstructor: PanelContainerElement
+    atom.views.addViewProvider PanelContainer, (model) ->
+      new PanelContainerElement().initialize(model)
 
-    atom.views.addViewProvider
-      modelConstructor: Panel
-      viewConstructor: PanelElement
+    atom.views.addViewProvider Panel, (model) ->
+      new PanelElement().initialize(model)
 
   # Called by the Serializable mixin during deserialization
   deserializeParams: (params) ->
     for packageName in params.packagesWithActiveGrammars ? []
       atom.packages.getLoadedPackage(packageName)?.loadGrammarsSync()
 
-    params.paneContainer.viewRegistry = atom.views
     params.paneContainer = PaneContainer.deserialize(params.paneContainer)
     params
 
@@ -240,6 +240,16 @@ class Workspace extends Model
   # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   onDidAddPane: (callback) -> @paneContainer.onDidAddPane(callback)
 
+  # Extended: Invoke the given callback when a pane is destroyed in the
+  # workspace.
+  #
+  # * `callback` {Function} to be called panes are destroyed.
+  #   * `event` {Object} with the following keys:
+  #     * `pane` The destroyed pane.
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  onDidDestroyPane: (callback) -> @paneContainer.onDidDestroyPane(callback)
+
   # Extended: Invoke the given callback with all current and future panes in the
   # workspace.
   #
@@ -271,7 +281,7 @@ class Workspace extends Model
   # Extended: Invoke the given callback when a pane item is added to the
   # workspace.
   #
-  # * `callback` {Function} to be called when panes are added.
+  # * `callback` {Function} to be called when pane items are added.
   #   * `event` {Object} with the following keys:
   #     * `item` The added pane item.
   #     * `pane` {Pane} containing the added item.
@@ -279,6 +289,31 @@ class Workspace extends Model
   #
   # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   onDidAddPaneItem: (callback) -> @paneContainer.onDidAddPaneItem(callback)
+
+  # Extended: Invoke the given callback when a pane item is about to be
+  # destroyed, before the user is prompted to save it.
+  #
+  # * `callback` {Function} to be called before pane items are destroyed.
+  #   * `event` {Object} with the following keys:
+  #     * `item` The item to be destroyed.
+  #     * `pane` {Pane} containing the item to be destroyed.
+  #     * `index` {Number} indicating the index of the item to be destroyed in
+  #       its pane.
+  #
+  # Returns a {Disposable} on which `.dispose` can be called to unsubscribe.
+  onWillDestroyPaneItem: (callback) -> @paneContainer.onWillDestroyPaneItem(callback)
+
+  # Extended: Invoke the given callback when a pane item is destroyed.
+  #
+  # * `callback` {Function} to be called when pane items are destroyed.
+  #   * `event` {Object} with the following keys:
+  #     * `item` The destroyed item.
+  #     * `pane` {Pane} containing the destroyed item.
+  #     * `index` {Number} indicating the index of the destroyed item in its
+  #       pane.
+  #
+  # Returns a {Disposable} on which `.dispose` can be called to unsubscribe.
+  onDidDestroyPaneItem: (callback) -> @paneContainer.onDidDestroyPaneItem(callback)
 
   # Extended: Invoke the given callback when a text editor is added to the
   # workspace.
@@ -503,9 +538,10 @@ class Workspace extends Model
     activeItem = @getActivePaneItem()
     activeItem if activeItem instanceof TextEditor
 
-  # Deprecated:
+  # Deprecated
   getActiveEditor: ->
-    @activePane?.getActiveEditor()
+    Grim.deprecate "Call ::getActiveTextEditor instead"
+    @getActivePane()?.getActiveEditor()
 
   # Save all pane items.
   saveAll: ->
@@ -605,7 +641,7 @@ class Workspace extends Model
       _.remove(@destroyedItemUris, uri)
 
   # Adds the destroyed item's uri to the list of items to reopen.
-  onPaneItemDestroyed: (item) =>
+  didDestroyPaneItem: ({item}) =>
     if uri = item.getUri?()
       @destroyedItemUris.push(uri)
 
@@ -719,5 +755,4 @@ class Workspace extends Model
 
   addPanel: (location, options) ->
     options ?= {}
-    options.viewRegistry = atom.views
     @panelContainers[location].addPanel(new Panel(options))

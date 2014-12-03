@@ -1,6 +1,5 @@
 {EventEmitter} = require 'events'
 _ = require 'underscore-plus'
-shellAutoUpdater = require 'auto-updater'
 SquirrelUpdate = require './squirrel-update'
 
 class AutoUpdater
@@ -9,15 +8,12 @@ class AutoUpdater
   setFeedUrl: (@updateUrl) ->
 
   quitAndInstall: ->
-    unless SquirrelUpdate.existsSync()
-      shellAutoUpdater.quitAndInstall()
-      return
+    console.log 'restarting new atom.exe'
 
-    @installUpdate (error) ->
-      return if error?
-
-      SquirrelUpdate.spawn ['--processStart', 'atom.exe'], ->
-        shellAutoUpdater.quitAndInstall()
+    if SquirrelUpdate.existsSync()
+      SquirrelUpdate.restartAtom()
+    else
+      require('auto-updater').quitAndInstall()
 
   downloadUpdate: (callback) ->
     SquirrelUpdate.spawn ['--download', @updateUrl], (error, stdout) ->
@@ -35,6 +31,9 @@ class AutoUpdater
 
   installUpdate: (callback) ->
     SquirrelUpdate.spawn(['--update', @updateUrl], callback)
+
+  supportsUpdates: ->
+    SquirrelUpdate.existsSync()
 
   checkForUpdates: ->
     throw new Error('Update URL is not set') unless @updateUrl
