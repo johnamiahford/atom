@@ -11,6 +11,7 @@ _ = require 'underscore-plus'
 {Emitter} = require 'event-kit'
 {Model} = require 'theorist'
 fs = require 'fs-plus'
+{convertStackTrace, convertLine} = require 'coffeestack'
 
 {$} = require './space-pen-extensions'
 WindowEventHandler = require './window-event-handler'
@@ -133,6 +134,9 @@ class Atom extends Model
   # Public: A {Clipboard} instance
   clipboard: null
 
+  # Public: A {ServiceHub} instance
+  services: null
+
   # Public: A {ContextMenuManager} instance
   contextMenu: null
 
@@ -195,9 +199,16 @@ class Atom extends Model
     unless @inDevMode() or @inSpecMode()
       require('grim').deprecate = ->
 
+    sourceMapCache = {}
+
     window.onerror = =>
       @lastUncaughtError = Array::slice.call(arguments)
       [message, url, line, column, originalError] = @lastUncaughtError
+
+      convertedLine = convertLine(url, line, column, sourceMapCache)
+      {line, column} = convertedLine if convertedLine?
+      originalError.stack = convertStackTrace(originalError.stack, sourceMapCache) if originalError
+
       eventObject = {message, url, line, column, originalError}
 
       openDevTools = true
@@ -225,6 +236,7 @@ class Atom extends Model
     NotificationManager = require './notification-manager'
     PackageManager = require './package-manager'
     Clipboard = require './clipboard'
+    ServiceHub = require './service-hub'
     GrammarRegistry = require './grammar-registry'
     ThemeManager = require './theme-manager'
     StyleManager = require './style-manager'
@@ -260,6 +272,7 @@ class Atom extends Model
     @contextMenu = new ContextMenuManager({resourcePath, devMode})
     @menu = new MenuManager({resourcePath})
     @clipboard = new Clipboard()
+    @services = new ServiceHub
 
     @grammars = @deserializers.deserialize(@state.grammars ? @state.syntax) ? new GrammarRegistry()
 
