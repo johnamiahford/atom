@@ -1,3 +1,4 @@
+{Emitter} = require 'event-kit'
 {View, $, callRemoveHooks} = require 'space-pen'
 React = require 'react-atom-fork'
 Path = require 'path'
@@ -13,10 +14,12 @@ class TextEditorElement extends HTMLElement
   model: null
   componentDescriptor: null
   component: null
+  attached: false
   lineOverdrawMargin: null
   focusOnAttach: false
 
   createdCallback: ->
+    @emitter = new Emitter
     @initializeContent()
     @createSpacePenShim()
     @addEventListener 'focus', @focused.bind(this)
@@ -61,6 +64,10 @@ class TextEditorElement extends HTMLElement
     @mountComponent() unless @component?.isMounted()
     @component.checkForVisibilityChange()
     @focus() if @focusOnAttach
+    @emitter.emit("did-attach")
+
+  detachedCallback: ->
+    @emitter.emit("did-detach")
 
   initialize: (model) ->
     @setModel(model)
@@ -160,6 +167,24 @@ class TextEditorElement extends HTMLElement
 
   isUpdatedSynchronously: -> @updatedSynchronously
 
+  # Extended: get the width of a character of text displayed in this element.
+  #
+  # Returns a {Number} of pixels.
+  getDefaultCharacterWidth: ->
+    @getModel().getDefaultCharWidth()
+
+  # Extended: call the given `callback` when the editor is attached to the DOM.
+  #
+  # * `callback` {Function}
+  onDidAttach: (callback) ->
+    @emitter.on("did-attach", callback)
+
+  # Extended: call the given `callback` when the editor is detached from the DOM.
+  #
+  # * `callback` {Function}
+  onDidDetach: (callback) ->
+    @emitter.on("did-detach", callback)
+
 stopEventPropagation = (commandListeners) ->
   newCommandListeners = {}
   for commandName, commandListener of commandListeners
@@ -183,28 +208,14 @@ stopEventPropagationAndGroupUndo = (commandListeners) ->
 atom.commands.add 'atom-text-editor', stopEventPropagation(
   'core:undo': -> @undo()
   'core:redo': -> @redo()
-)
-
-atom.commands.add 'atom-text-editor', stopEventPropagationAndGroupUndo(
   'core:move-left': -> @moveLeft()
   'core:move-right': -> @moveRight()
   'core:select-left': -> @selectLeft()
   'core:select-right': -> @selectRight()
   'core:select-all': -> @selectAll()
-  'core:backspace': -> @backspace()
-  'core:delete': -> @delete()
-  'core:cut': -> @cutSelectedText()
-  'core:copy': -> @copySelectedText()
-  'core:paste': -> @pasteText()
   'editor:move-to-previous-word': -> @moveToPreviousWord()
   'editor:select-word': -> @selectWordsContainingCursors()
   'editor:consolidate-selections': (event) -> event.abortKeyBinding() unless @consolidateSelections()
-  'editor:delete-to-beginning-of-word': -> @deleteToBeginningOfWord()
-  'editor:delete-to-beginning-of-line': -> @deleteToBeginningOfLine()
-  'editor:delete-to-end-of-line': -> @deleteToEndOfLine()
-  'editor:delete-to-end-of-word': -> @deleteToEndOfWord()
-  'editor:delete-line': -> @deleteLine()
-  'editor:cut-to-end-of-line': -> @cutToEndOfLine()
   'editor:move-to-beginning-of-next-paragraph': -> @moveToBeginningOfNextParagraph()
   'editor:move-to-beginning-of-previous-paragraph': -> @moveToBeginningOfPreviousParagraph()
   'editor:move-to-beginning-of-screen-line': -> @moveToBeginningOfScreenLine()
@@ -228,12 +239,26 @@ atom.commands.add 'atom-text-editor', stopEventPropagationAndGroupUndo(
   'editor:select-to-previous-word-boundary': -> @selectToPreviousWordBoundary()
   'editor:select-to-first-character-of-line': -> @selectToFirstCharacterOfLine()
   'editor:select-line': -> @selectLinesContainingCursors()
+)
+
+atom.commands.add 'atom-text-editor', stopEventPropagationAndGroupUndo(
+  'core:backspace': -> @backspace()
+  'core:delete': -> @delete()
+  'core:cut': -> @cutSelectedText()
+  'core:copy': -> @copySelectedText()
+  'core:paste': -> @pasteText()
+  'editor:delete-to-beginning-of-word': -> @deleteToBeginningOfWord()
+  'editor:delete-to-beginning-of-line': -> @deleteToBeginningOfLine()
+  'editor:delete-to-end-of-line': -> @deleteToEndOfLine()
+  'editor:delete-to-end-of-word': -> @deleteToEndOfWord()
+  'editor:delete-line': -> @deleteLine()
+  'editor:cut-to-end-of-line': -> @cutToEndOfLine()
   'editor:transpose': -> @transpose()
   'editor:upper-case': -> @upperCase()
   'editor:lower-case': -> @lowerCase()
 )
 
-atom.commands.add 'atom-text-editor:not([mini])', stopEventPropagationAndGroupUndo(
+atom.commands.add 'atom-text-editor:not([mini])', stopEventPropagation(
   'core:move-up': -> @moveUp()
   'core:move-down': -> @moveDown()
   'core:move-to-top': -> @moveToTop()
@@ -246,13 +271,6 @@ atom.commands.add 'atom-text-editor:not([mini])', stopEventPropagationAndGroupUn
   'core:select-to-bottom': -> @selectToBottom()
   'core:select-page-up': -> @selectPageUp()
   'core:select-page-down': -> @selectPageDown()
-  'editor:indent': -> @indent()
-  'editor:auto-indent': -> @autoIndentSelectedRows()
-  'editor:indent-selected-rows': -> @indentSelectedRows()
-  'editor:outdent-selected-rows': -> @outdentSelectedRows()
-  'editor:newline': -> @insertNewline()
-  'editor:newline-below': -> @insertNewlineBelow()
-  'editor:newline-above': -> @insertNewlineAbove()
   'editor:add-selection-below': -> @addSelectionBelow()
   'editor:add-selection-above': -> @addSelectionAbove()
   'editor:split-selections-into-lines': -> @splitSelectionsIntoLines()
@@ -272,17 +290,27 @@ atom.commands.add 'atom-text-editor:not([mini])', stopEventPropagationAndGroupUn
   'editor:fold-at-indent-level-7': -> @foldAllAtIndentLevel(6)
   'editor:fold-at-indent-level-8': -> @foldAllAtIndentLevel(7)
   'editor:fold-at-indent-level-9': -> @foldAllAtIndentLevel(8)
-  'editor:toggle-line-comments': -> @toggleLineCommentsInSelection()
   'editor:log-cursor-scope': -> @logCursorScope()
-  'editor:checkout-head-revision': -> atom.project.getRepositories()[0]?.checkoutHeadForEditor(this)
   'editor:copy-path': -> @copyPathToClipboard()
+  'editor:toggle-indent-guide': -> atom.config.set('editor.showIndentGuide', not atom.config.get('editor.showIndentGuide'))
+  'editor:toggle-line-numbers': -> atom.config.set('editor.showLineNumbers', not atom.config.get('editor.showLineNumbers'))
+  'editor:scroll-to-cursor': -> @scrollToCursorPosition()
+)
+
+atom.commands.add 'atom-text-editor:not([mini])', stopEventPropagationAndGroupUndo(
+  'editor:indent': -> @indent()
+  'editor:auto-indent': -> @autoIndentSelectedRows()
+  'editor:indent-selected-rows': -> @indentSelectedRows()
+  'editor:outdent-selected-rows': -> @outdentSelectedRows()
+  'editor:newline': -> @insertNewline()
+  'editor:newline-below': -> @insertNewlineBelow()
+  'editor:newline-above': -> @insertNewlineAbove()
+  'editor:toggle-line-comments': -> @toggleLineCommentsInSelection()
+  'editor:checkout-head-revision': -> atom.project.getRepositories()[0]?.checkoutHeadForEditor(this)
   'editor:move-line-up': -> @moveLineUp()
   'editor:move-line-down': -> @moveLineDown()
   'editor:duplicate-lines': -> @duplicateLines()
   'editor:join-lines': -> @joinLines()
-  'editor:toggle-indent-guide': -> atom.config.set('editor.showIndentGuide', not atom.config.get('editor.showIndentGuide'))
-  'editor:toggle-line-numbers': -> atom.config.set('editor.showLineNumbers', not atom.config.get('editor.showLineNumbers'))
-  'editor:scroll-to-cursor': -> @scrollToCursorPosition()
 )
 
 module.exports = TextEditorElement = document.registerElement 'atom-text-editor', prototype: TextEditorElement.prototype
