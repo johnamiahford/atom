@@ -45,7 +45,7 @@ class Cursor extends Model
         cursor: this
 
       @emit 'moved', movedEvent
-      @emitter.emit 'did-change-position'
+      @emitter.emit 'did-change-position', movedEvent
       @editor.cursorMoved(movedEvent)
     @marker.onDidDestroy =>
       @destroyed = true
@@ -665,7 +665,7 @@ class Cursor extends Model
   autoscroll: (options) ->
     @editor.scrollToScreenRange(@getScreenRange(), options)
 
-  getBeginningOfNextParagraphBufferPosition: (editor) ->
+  getBeginningOfNextParagraphBufferPosition: ->
     start = @getBufferPosition()
     eof = @editor.getEofBufferPosition()
     scanRange = [start, eof]
@@ -679,8 +679,8 @@ class Cursor extends Model
         stop()
     @editor.screenPositionForBufferPosition(position)
 
-  getBeginningOfPreviousParagraphBufferPosition: (editor) ->
-    start = @editor.getCursorBufferPosition()
+  getBeginningOfPreviousParagraphBufferPosition: ->
+    start = @getBufferPosition()
 
     {row, column} = start
     scanRange = [[row-1, column], [0,0]]
