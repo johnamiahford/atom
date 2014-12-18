@@ -1,4 +1,3 @@
-app = require 'app'
 ChildProcess = require 'child_process'
 fs = require 'fs-plus'
 path = require 'path'
@@ -166,12 +165,29 @@ removeCommandsFromPath = (callback) ->
 
 # Create a desktop and start menu shortcut by using the command line API
 # provided by Squirrel's Update.exe
-createShortcut = (callback) ->
+createShortcuts = (callback) ->
   spawnUpdate(['--createShortcut', exeName], callback)
+
+# Update the desktop and start menu shortcuts by using the command line API
+# provided by Squirrel's Update.exe
+updateShortcuts = (callback) ->
+  if homeDirectory = fs.getHomeDirectory()
+    desktopShortcutPath = path.join(homeDirectory, 'Desktop', 'Atom.lnk')
+    # Check if the desktop shortcut has been previously deleted and
+    # and keep it deleted if it was
+    fs.exists desktopShortcutPath, (desktopShortcutExists) ->
+      createShortcuts ->
+        if desktopShortcutExists
+          callback()
+        else
+          # Remove the unwanted desktop shortcut that was recreated
+          fs.unlink(desktopShortcutPath, callback)
+  else
+    createShortcuts(callback)
 
 # Remove the desktop and start menu shortcuts by using the command line API
 # provided by Squirrel's Update.exe
-removeShortcut = (callback) ->
+removeShortcuts = (callback) ->
   spawnUpdate(['--removeShortcut', exeName], callback)
 
 exports.spawn = spawnUpdate
@@ -181,23 +197,29 @@ exports.existsSync = ->
   fs.existsSync(updateDotExe)
 
 # Restart Atom using the version pointed to by the atom.cmd shim
-exports.restartAtom = ->
+exports.restartAtom = (app) ->
   if projectPath = global.atomApplication?.lastFocusedWindow?.projectPath
     args = [projectPath]
   app.once 'will-quit', -> spawn(path.join(binFolder, 'atom.cmd'), args)
   app.quit()
 
 # Handle squirrel events denoted by --squirrel-* command line arguments.
-exports.handleStartupEvent = ->
-  switch process.argv[1]
-    when '--squirrel-install', '--squirrel-updated'
-      createShortcut ->
+exports.handleStartupEvent = (app, squirrelCommand) ->
+  switch squirrelCommand
+    when '--squirrel-install'
+      createShortcuts ->
+        installContextMenu ->
+          addCommandsToPath ->
+            app.quit()
+      true
+    when '--squirrel-updated'
+      updateShortcuts ->
         installContextMenu ->
           addCommandsToPath ->
             app.quit()
       true
     when '--squirrel-uninstall'
-      removeShortcut ->
+      removeShortcuts ->
         uninstallContextMenu ->
           removeCommandsFromPath ->
             app.quit()

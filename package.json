@@ -63,7 +63,7 @@
     "temp": "0.7.0",
     "text-buffer": "^3.8.2",
     "theorist": "^1.0.2",
-    "underscore-plus": "^1.6.3",
+    "underscore-plus": "^1.6.5",
     "vm-compatibility-layer": "0.1.0"
   },
   "packageDependencies": {
@@ -105,7 +105,7 @@
     "settings-view": "0.161.0",
     "snippets": "0.59.0",
     "spell-check": "0.45.0",
-    "status-bar": "0.53.0",
+    "status-bar": "0.54.0",
     "styleguide": "0.36.0",
     "symbols-view": "0.70.0",
     "tabs": "0.58.0",
