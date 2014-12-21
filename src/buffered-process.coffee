@@ -1,6 +1,7 @@
 _ = require 'underscore-plus'
 ChildProcess = require 'child_process'
 {Emitter} = require 'event-kit'
+path = require 'path'
 
 # Extended: A wrapper which provides standard error/output line buffering for
 # Node's ChildProcess.
@@ -201,7 +202,7 @@ class BufferedProcess
 
   getCmdPath: ->
     if process.env.comspec
-      process.env.compec
+      process.env.comspec
     else if process.env.SystemRoot
       path.join(process.env.SystemRoot, 'System32', 'cmd.exe')
     else

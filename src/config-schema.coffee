@@ -16,6 +16,11 @@ module.exports =
         type: 'boolean'
         default: true
         title: 'Exclude VCS Ignored Paths'
+      followSymlinks:
+        type: 'boolean'
+        default: false
+        title: 'Follow symlinks'
+        description: 'Used when searching and when opening files with the fuzzy finder.'
       disabledPackages:
         type: 'array'
         default: []
