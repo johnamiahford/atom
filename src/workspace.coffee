@@ -455,6 +455,8 @@ class Workspace extends Model
         @itemOpened(item)
         pane.activateItem(item)
         pane.activate() if activatePane
+        if options.initialLine? or options.initialColumn?
+          item.setCursorBufferPosition?([options.initialLine, options.initialColumn])
         index = pane.getActiveItemIndex()
         @emit "uri-opened"
         @emitter.emit 'did-open', {uri, pane, item, index}
@@ -645,7 +647,7 @@ class Workspace extends Model
 
   # Restore to a default editor font size.
   resetFontSize: ->
-    atom.config.restoreDefault("editor.fontSize")
+    atom.config.unset("editor.fontSize")
 
   # Removes the item's uri from the list of potential items to reopen.
   itemOpened: (item) ->

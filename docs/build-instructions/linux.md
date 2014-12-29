@@ -26,12 +26,16 @@ Ubuntu LTS 12.04 64-bit is the recommended platform.
 
 ### Arch
 
-* `sudo pacman -S base-devel git nodejs libgnome-keyring python2`
+* `sudo pacman -S gconf base-devel git nodejs libgnome-keyring python2`
 * `export PYTHON=/usr/bin/python2` before building Atom.
 
 ### Slackware
 
 * `sbopkg -k -i node -i atom`
+
+### openSUSE
+
+* `sudo zypper install nodejs make gcc gcc-c++ glibc-devel git-core libgnome-keyring-devel rpmdevtools`
 
 ## Instructions
 

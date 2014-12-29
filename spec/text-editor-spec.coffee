@@ -62,7 +62,6 @@ describe "TextEditor", ->
         atom.workspace.open('sample.less', initialLine: 5).then (o) -> editor = o
 
       runs ->
-        buffer = editor.buffer
         expect(editor.getLastCursor().getBufferPosition().row).toEqual 5
         expect(editor.getLastCursor().getBufferPosition().column).toEqual 0
 
@@ -74,9 +73,36 @@ describe "TextEditor", ->
         atom.workspace.open('sample.less', initialColumn: 8).then (o) -> editor = o
 
       runs ->
-        buffer = editor.buffer
         expect(editor.getLastCursor().getBufferPosition().row).toEqual 0
         expect(editor.getLastCursor().getBufferPosition().column).toEqual 8
+
+  describe "when the editor is reopened with an initialLine option", ->
+    it "positions the cursor on the specified line", ->
+      editor = null
+
+      waitsForPromise ->
+        atom.workspace.open('sample.less', initialLine: 5).then (o) -> editor = o
+
+      waitsForPromise ->
+        atom.workspace.open('sample.less', initialLine: 4).then (o) -> editor = o
+
+      runs ->
+        expect(editor.getLastCursor().getBufferPosition().row).toEqual 4
+        expect(editor.getLastCursor().getBufferPosition().column).toEqual 0
+
+  describe "when the editor is reopened with an initialColumn option", ->
+    it "positions the cursor on the specified column", ->
+      editor = null
+
+      waitsForPromise ->
+        atom.workspace.open('sample.less', initialColumn: 8).then (o) -> editor = o
+
+      waitsForPromise ->
+        atom.workspace.open('sample.less', initialColumn: 7).then (o) -> editor = o
+
+      runs ->
+        expect(editor.getLastCursor().getBufferPosition().row).toEqual 0
+        expect(editor.getLastCursor().getBufferPosition().column).toEqual 7
 
   describe ".copy()", ->
     it "returns a different edit session with the same initial state", ->
@@ -1327,7 +1353,7 @@ describe "TextEditor", ->
           coffeeEditor.selectWordsContainingCursors()
           expect(coffeeEditor.getSelectedBufferRange()).toEqual [[0, 6], [0, 15]]
 
-          atom.config.set '.source.coffee', 'editor.nonWordCharacters', 'qusort'
+          atom.config.set 'editor.nonWordCharacters', 'qusort', scopeSelector: '.source.coffee'
 
           coffeeEditor.setCursorBufferPosition [0, 9]
           coffeeEditor.selectWordsContainingCursors()
@@ -3276,7 +3302,7 @@ describe "TextEditor", ->
         atom.packages.unloadPackages()
 
       it 'returns correct values based on the scope of the set grammars', ->
-        atom.config.set '.source.coffee', 'editor.tabLength', 6
+        atom.config.set 'editor.tabLength', 6, scopeSelector: '.source.coffee'
 
         expect(editor.getTabLength()).toBe 2
         expect(coffeeEditor.getTabLength()).toBe 6
@@ -3298,12 +3324,12 @@ describe "TextEditor", ->
         expect(editor.getTabLength()).toBe 2
         expect(editor.tokenizedLineForScreenRow(5).tokens[0].firstNonWhitespaceIndex).toBe 2
 
-        atom.config.set '.source.js', 'editor.tabLength', 6
+        atom.config.set 'editor.tabLength', 6, scopeSelector: '.source.js'
         expect(editor.getTabLength()).toBe 6
         expect(editor.tokenizedLineForScreenRow(5).tokens[0].firstNonWhitespaceIndex).toBe 6
 
       it 'updates the tab length when the grammar changes', ->
-        atom.config.set '.source.coffee', 'editor.tabLength', 6
+        atom.config.set 'editor.tabLength', 6, scopeSelector: '.source.coffee'
 
         expect(editor.getTabLength()).toBe 2
         expect(editor.tokenizedLineForScreenRow(5).tokens[0].firstNonWhitespaceIndex).toBe 2
@@ -3473,8 +3499,8 @@ describe "TextEditor", ->
           atom.project.open('coffee.coffee', autoIndent: false).then (o) -> coffeeEditor = o
 
         runs ->
-          atom.config.set('.source.js', 'editor.autoIndent', true)
-          atom.config.set('.source.coffee', 'editor.autoIndent', false)
+          atom.config.set('editor.autoIndent', true, scopeSelector: '.source.js')
+          atom.config.set('editor.autoIndent', false, scopeSelector: '.source.coffee')
 
       afterEach: ->
         atom.packages.deactivatePackages()
@@ -3766,8 +3792,12 @@ describe "TextEditor", ->
     it "updates the grammar based on grammar overrides", ->
       expect(editor.getGrammar().name).toBe 'JavaScript'
       atom.grammars.setGrammarOverrideForPath(editor.getPath(), 'source.coffee')
+      callback = jasmine.createSpy('callback')
+      editor.onDidChangeGrammar(callback)
       editor.reloadGrammar()
       expect(editor.getGrammar().name).toBe 'CoffeeScript'
+      expect(callback.callCount).toBe 1
+      expect(callback.argsForCall[0][0]).toBe atom.grammars.grammarForScopeName('source.coffee')
 
   describe "when the editor's grammar has an injection selector", ->
     beforeEach ->
