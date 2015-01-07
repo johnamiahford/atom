@@ -65,7 +65,7 @@ class ViewRegistry
   #   * `modelConstructor` Constructor {Function} for your model.
   #   * `viewConstructor` (Optional) Constructor {Function} for your view. It
   #     should be a subclass of `HTMLElement` (that is, your view should be a
-  #     DOM node) and   have a `::setModel()` method which will be called
+  #     DOM node) and have a `::setModel()` method which will be called
   #     immediately after construction. If you don't supply this property, you
   #     must supply the `createView` property with a function that never returns
   #     `undefined`.
@@ -97,12 +97,14 @@ class ViewRegistry
   # ## Examples
   #
   # ### Getting An Editor Element
+  #
   # ```coffee
   # textEditor = atom.workspace.getActiveTextEditor()
   # textEditorElement = atom.views.getView(textEditor)
   # ```
   #
   # ### Getting A Pane Element
+  #
   # ```coffee
   # pane = atom.workspace.getActivePane()
   # paneElement = atom.views.getView(pane)
@@ -132,7 +134,6 @@ class ViewRegistry
     if object instanceof HTMLElement
       object
     else if object?.jquery
-      object[0]?.__spacePenView ?= object
       object[0]
     else if provider = @findProvider(object)
       element = provider.createView?(object)
@@ -142,7 +143,6 @@ class ViewRegistry
       element
     else if viewConstructor = object?.getViewClass?()
       view = new viewConstructor(object)
-      view[0].__spacePenView ?= view
       view[0]
     else
       throw new Error("Can't create a view for #{object.constructor.name} instance. Please register a view provider.")
