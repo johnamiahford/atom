@@ -109,7 +109,7 @@ class Package
 
   getType: -> 'atom'
 
-  getStylesheetType: -> 'bundled'
+  getStyleSheetPriority: -> 0
 
   load: ->
     @measure 'loadTime', =>
@@ -175,8 +175,9 @@ class Package
   activateStylesheets: ->
     return if @stylesheetsActivated
 
-    group = @getStylesheetType()
     @stylesheetDisposables = new CompositeDisposable
+
+    priority = @getStyleSheetPriority()
     for [sourcePath, source] in @stylesheets
       if match = path.basename(sourcePath).match(/[^.]*\.([^.]*)\./)
         context = match[1]
@@ -185,7 +186,7 @@ class Package
       else
         context = undefined
 
-      @stylesheetDisposables.add(atom.styles.addStyleSheet(source, {sourcePath, group, context}))
+      @stylesheetDisposables.add(atom.styles.addStyleSheet(source, {sourcePath, priority, context}))
     @stylesheetsActivated = true
 
   activateResources: ->
@@ -205,13 +206,13 @@ class Package
     if @bundledPackage and packagesCache[@name]?
       @keymaps = (["#{atom.packages.resourcePath}#{path.sep}#{keymapPath}", keymapObject] for keymapPath, keymapObject of packagesCache[@name].keymaps)
     else
-      @keymaps = @getKeymapPaths().map (keymapPath) -> [keymapPath, CSON.readFileSync(keymapPath)]
+      @keymaps = @getKeymapPaths().map (keymapPath) -> [keymapPath, CSON.readFileSync(keymapPath) ? {}]
 
   loadMenus: ->
     if @bundledPackage and packagesCache[@name]?
       @menus = (["#{atom.packages.resourcePath}#{path.sep}#{menuPath}", menuObject] for menuPath, menuObject of packagesCache[@name].menus)
     else
-      @menus = @getMenuPaths().map (menuPath) -> [menuPath, CSON.readFileSync(menuPath)]
+      @menus = @getMenuPaths().map (menuPath) -> [menuPath, CSON.readFileSync(menuPath) ? {}]
 
   getKeymapPaths: ->
     keymapsDirPath = path.join(@path, 'keymaps')
@@ -298,7 +299,7 @@ class Package
 
     if fs.isDirectorySync(path.join(@path, 'scoped-properties'))
       settingsDirPath = path.join(@path, 'scoped-properties')
-      deprecate("Store package settings files in the `settings` directory instead of `scoped-properties`")
+      deprecate("Store package settings files in the `settings` directory instead of `scoped-properties`", packageName: @name)
     else
       settingsDirPath = path.join(@path, 'settings')
 

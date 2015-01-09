@@ -61,8 +61,13 @@ class ThemeManager
   # updating the list of active themes have completed.
   #
   # * `callback` {Function}
+  onDidChangeActiveThemes: (callback) ->
+    @emitter.on 'did-change-active-themes', callback
+    @emitter.on 'did-reload-all', callback # TODO: Remove once deprecated pre-1.0 APIs are gone
+
   onDidReloadAll: (callback) ->
-    @emitter.on 'did-reload-all', callback
+    Grim.deprecate("Use `::onDidChangeActiveThemes` instead.")
+    @onDidChangeActiveThemes(callback)
 
   # Deprecated: Invoke `callback` when a stylesheet has been added to the dom.
   #
@@ -106,7 +111,7 @@ class ThemeManager
   on: (eventName) ->
     switch eventName
       when 'reloaded'
-        Grim.deprecate 'Use ThemeManager::onDidReloadAll instead'
+        Grim.deprecate 'Use ThemeManager::onDidChangeActiveThemes instead'
       when 'stylesheet-added'
         Grim.deprecate 'Use ThemeManager::onDidAddStylesheet instead'
       when 'stylesheet-removed'
@@ -132,8 +137,12 @@ class ThemeManager
   ###
 
   # Public: Get an array of all the loaded theme names.
-  getLoadedNames: ->
+  getLoadedThemeNames: ->
     theme.name for theme in @getLoadedThemes()
+
+  getLoadedNames: ->
+    Grim.deprecate("Use `::getLoadedThemeNames` instead.")
+    @getLoadedThemeNames()
 
   # Public: Get an array of all the loaded themes.
   getLoadedThemes: ->
@@ -144,8 +153,12 @@ class ThemeManager
   ###
 
   # Public: Get an array of all the active theme names.
-  getActiveNames: ->
+  getActiveThemeNames: ->
     theme.name for theme in @getActiveThemes()
+
+  getActiveNames: ->
+    Grim.deprecate("Use `::getActiveThemeNames` instead.")
+    @getActiveThemeNames()
 
   # Public: Get an array of all the active themes.
   getActiveThemes: ->
@@ -195,10 +208,11 @@ class ThemeManager
     # the first/top theme to override later themes in the stack.
     themeNames.reverse()
 
-  # Public: Set the list of enabled themes.
+  # Set the list of enabled themes.
   #
   # * `enabledThemeNames` An {Array} of {String} theme names.
   setEnabledThemes: (enabledThemeNames) ->
+    Grim.deprecate("Use `atom.config.set('core.themes', arrayOfThemeNames)` instead")
     atom.config.set('core.themes', enabledThemeNames)
 
   ###
@@ -219,28 +233,30 @@ class ThemeManager
   #
   # Returns a {Disposable} on which `.dispose()` can be called to remove the
   # required stylesheet.
-  requireStylesheet: (stylesheetPath, type='bundled') ->
+  requireStylesheet: (stylesheetPath) ->
     if fullPath = @resolveStylesheet(stylesheetPath)
       content = @loadStylesheet(fullPath)
-      @applyStylesheet(fullPath, content, type)
+      @applyStylesheet(fullPath, content)
     else
       throw new Error("Could not find a file at path '#{stylesheetPath}'")
 
   unwatchUserStylesheet: ->
     @userStylesheetFile?.off()
     @userStylesheetFile = null
-    @removeStylesheet(@userStylesheetPath) if @userStylesheetPath?
+    @userStyleSheetDisposable?.dispose()
+    @userStyleSheetDisposable = null
 
   loadUserStylesheet: ->
     @unwatchUserStylesheet()
+
     userStylesheetPath = atom.styles.getUserStyleSheetPath()
     return unless fs.isFileSync(userStylesheetPath)
 
-    @userStylesheetPath = userStylesheetPath
     @userStylesheetFile = new File(userStylesheetPath)
     @userStylesheetFile.on 'contents-changed moved removed', => @loadUserStylesheet()
     userStylesheetContents = @loadStylesheet(userStylesheetPath, true)
-    @applyStylesheet(userStylesheetPath, userStylesheetContents, 'userTheme')
+
+    @userStyleSheetDisposable = atom.styles.addStyleSheet(userStylesheetContents, sourcePath: userStylesheetPath, priority: 2)
 
   loadBaseStylesheets: ->
     @requireStylesheet('../static/bootstrap')
@@ -291,8 +307,8 @@ class ThemeManager
   removeStylesheet: (stylesheetPath) ->
     @styleSheetDisposablesBySourcePath[stylesheetPath]?.dispose()
 
-  applyStylesheet: (path, text, type='bundled') ->
-    @styleSheetDisposablesBySourcePath[path] = atom.styles.addStyleSheet(text, sourcePath: path, group: type)
+  applyStylesheet: (path, text) ->
+    @styleSheetDisposablesBySourcePath[path] = atom.styles.addStyleSheet(text, sourcePath: path)
 
   stringToId: (string) ->
     string.replace(/\\/g, '/')
@@ -320,7 +336,7 @@ class ThemeManager
         @reloadBaseStylesheets()
         @initialLoadComplete = true
         @emit 'reloaded'
-        @emitter.emit 'did-reload-all'
+        @emitter.emit 'did-change-active-themes'
         deferred.resolve()
 
     deferred.promise
