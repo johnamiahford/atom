@@ -252,10 +252,21 @@ class ThemeManager
     userStylesheetPath = atom.styles.getUserStyleSheetPath()
     return unless fs.isFileSync(userStylesheetPath)
 
-    @userStylesheetFile = new File(userStylesheetPath)
-    @userStylesheetFile.on 'contents-changed moved removed', => @loadUserStylesheet()
-    userStylesheetContents = @loadStylesheet(userStylesheetPath, true)
+    try
+      @userStylesheetFile = new File(userStylesheetPath)
+      @userStylesheetFile.on 'contents-changed moved removed', => @loadUserStylesheet()
+    catch error
+      message = """
+        Unable to watch path: `#{path.basename(userStylesheetPath)}`. Make sure
+        you have permissions to `#{userStylesheetPath}`.
 
+        On linux there are currently problems with watch sizes. See
+        [this document][watches] for more info.
+        [watches]:https://github.com/atom/atom/blob/master/docs/build-instructions/linux.md#typeerror-unable-to-watch-path
+      """
+      atom.notifications.addError(message, dismissable: true)
+
+    userStylesheetContents = @loadStylesheet(userStylesheetPath, true)
     @userStyleSheetDisposable = atom.styles.addStyleSheet(userStylesheetContents, sourcePath: userStylesheetPath, priority: 2)
 
   loadBaseStylesheets: ->
@@ -298,11 +309,17 @@ class ThemeManager
       else
         @lessCache.read(lessStylesheetPath)
     catch error
-      console.error """
-        Error compiling Less stylesheet: #{lessStylesheetPath}
-        Line number: #{error.line}
-        #{error.message}
-      """
+      if error.line?
+        message = "Error compiling Less stylesheet: `#{lessStylesheetPath}`"
+        detail = """
+          Line number: #{error.line}
+          #{error.message}
+        """
+      else
+        message = "Error loading Less stylesheet: `#{lessStylesheetPath}`"
+        detail = error.message
+
+      atom.notifications.addError(message, {detail, dismissable: true})
 
   removeStylesheet: (stylesheetPath) ->
     @styleSheetDisposablesBySourcePath[stylesheetPath]?.dispose()
@@ -372,6 +389,10 @@ class ThemeManager
       themePaths = []
       for themeName in @getEnabledThemeNames()
         if themePath = @packageManager.resolvePackagePath(themeName)
-          themePaths.push(path.join(themePath, Package.stylesheetsDir))
+          deprecatedPath = path.join(themePath, 'stylesheets')
+          if fs.isDirectorySync(deprecatedPath)
+            themePaths.push(deprecatedPath)
+          else
+            themePaths.push(path.join(themePath, 'styles'))
 
     themePaths.filter (themePath) -> fs.isDirectorySync(themePath)

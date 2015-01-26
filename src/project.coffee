@@ -39,9 +39,7 @@ class Project extends Model
     @emitter = new Emitter
     @buffers ?= []
 
-    for buffer in @buffers
-      do (buffer) =>
-        buffer.onDidDestroy => @removeBuffer(buffer)
+    @subscribeToBuffer(buffer) for buffer in @buffers
 
     Grim.deprecate("Pass 'paths' array instead of 'path' to project constructor") if path?
     paths ?= _.compact([path])
@@ -68,9 +66,17 @@ class Project extends Model
     buffers: _.compact(@buffers.map (buffer) -> buffer.serialize() if buffer.isRetained())
 
   deserializeParams: (params) ->
-    params.buffers = params.buffers.map (bufferState) -> atom.deserializers.deserialize(bufferState)
-    params
+    params.buffers = _.compact params.buffers.map (bufferState) ->
+      # Check that buffer's file path is accessible
+      return if fs.isDirectorySync(bufferState.filePath)
+      if bufferState.filePath
+        try
+          fs.closeSync(fs.openSync(bufferState.filePath, 'r'))
+        catch error
+          return unless error.code is 'ENOENT'
 
+      atom.deserializers.deserialize(bufferState)
+    params
 
   ###
   Section: Event Subscription
@@ -139,14 +145,11 @@ class Project extends Model
     Grim.deprecate("Use ::getDirectories instead")
     @rootDirectory
 
-  # Public: Given a uri, this resolves it relative to the project directory. If
-  # the path is already absolute or if it is prefixed with a scheme, it is
-  # returned unchanged.
-  #
-  # * `uri` The {String} name of the path to convert.
-  #
-  # Returns a {String} or undefined if the uri is not missing or empty.
   resolve: (uri) ->
+    Grim.deprecate("Use `Project::getDirectories()[0]?.resolve()` instead")
+    @resolvePath(uri)
+
+  resolvePath: (uri) ->
     return unless uri
 
     if uri?.match(/[A-Za-z0-9+-.]+:\/\//) # leave path alone if it has a scheme
@@ -220,14 +223,22 @@ class Project extends Model
   #
   # Returns a promise that resolves to an {TextEditor}.
   open: (filePath, options={}) ->
-    filePath = @resolve(filePath)
+    filePath = @resolvePath(filePath)
+
+    if filePath?
+      try
+        fs.closeSync(fs.openSync(filePath, 'r'))
+      catch error
+        # allow ENOENT errors to create an editor for paths that dont exist
+        throw error unless error.code is 'ENOENT'
+
     @bufferForPath(filePath).then (buffer) =>
       @buildEditorForBuffer(buffer, options)
 
   # Deprecated
   openSync: (filePath, options={}) ->
     deprecate("Use Project::open instead")
-    filePath = @resolve(filePath)
+    filePath = @resolvePath(filePath)
     @buildEditorForBuffer(@bufferForPathSync(filePath), options)
 
   # Retrieves all the {TextBuffer}s in the project; that is, the
@@ -239,14 +250,14 @@ class Project extends Model
 
   # Is the buffer for the given path modified?
   isPathModified: (filePath) ->
-    @findBufferForPath(@resolve(filePath))?.isModified()
+    @findBufferForPath(@resolvePath(filePath))?.isModified()
 
   findBufferForPath: (filePath) ->
     _.find @buffers, (buffer) -> buffer.getPath() == filePath
 
   # Only to be used in specs
   bufferForPathSync: (filePath) ->
-    absoluteFilePath = @resolve(filePath)
+    absoluteFilePath = @resolvePath(filePath)
     existingBuffer = @findBufferForPath(absoluteFilePath) if filePath
     existingBuffer ? @buildBufferSync(absoluteFilePath)
 
@@ -259,7 +270,7 @@ class Project extends Model
   #
   # Returns a promise that resolves to the {TextBuffer}.
   bufferForPath: (filePath) ->
-    absoluteFilePath = @resolve(filePath)
+    absoluteFilePath = @resolvePath(filePath)
     existingBuffer = @findBufferForPath(absoluteFilePath) if absoluteFilePath
     Q(existingBuffer ? @buildBuffer(absoluteFilePath))
 
@@ -269,7 +280,6 @@ class Project extends Model
   # Still needed when deserializing a tokenized buffer
   buildBufferSync: (absoluteFilePath) ->
     buffer = new TextBuffer({filePath: absoluteFilePath})
-    buffer.setEncoding(atom.config.get('core.fileEncoding'))
     @addBuffer(buffer)
     buffer.loadSync()
     buffer
@@ -282,10 +292,11 @@ class Project extends Model
   # Returns a promise that resolves to the {TextBuffer}.
   buildBuffer: (absoluteFilePath) ->
     if fs.getSizeSync(absoluteFilePath) >= 2 * 1048576 # 2MB
-      throw new Error("Atom can only handle files < 2MB for now.")
+      error = new Error("Atom can only handle files < 2MB for now.")
+      error.code = 'EFILETOOLARGE'
+      throw error
 
     buffer = new TextBuffer({filePath: absoluteFilePath})
-    buffer.setEncoding(atom.config.get('core.fileEncoding'))
     @addBuffer(buffer)
     buffer.load()
       .then((buffer) -> buffer)
@@ -293,11 +304,11 @@ class Project extends Model
 
   addBuffer: (buffer, options={}) ->
     @addBufferAtIndex(buffer, @buffers.length, options)
-    buffer.onDidDestroy => @removeBuffer(buffer)
+    @subscribeToBuffer(buffer)
 
   addBufferAtIndex: (buffer, index, options={}) ->
     @buffers.splice(index, 0, buffer)
-    buffer.onDidDestroy => @removeBuffer(buffer)
+    @subscribeToBuffer(buffer)
     @emit 'buffer-created', buffer
     buffer
 
@@ -325,6 +336,17 @@ class Project extends Model
       subscriber.subscribe this, 'buffer-created', (buffer) -> callback(buffer)
     else
       @on 'buffer-created', (buffer) -> callback(buffer)
+
+  subscribeToBuffer: (buffer) ->
+    buffer.onDidDestroy => @removeBuffer(buffer)
+    buffer.onWillThrowWatchError ({error, handle}) ->
+      handle()
+      atom.notifications.addWarning """
+        Unable to read file after file `#{error.eventType}` event.
+        Make sure you have permission to access `#{buffer.getPath()}`.
+        """,
+        detail: error.message
+        dismissable: true
 
   # Deprecated: delegate
   registerOpener: (opener) ->

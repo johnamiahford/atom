@@ -1,17 +1,19 @@
 path = require 'path'
 temp = require 'temp'
 Workspace = require '../src/workspace'
+Pane = require '../src/pane'
 {View} = require '../src/space-pen-extensions'
 platform = require './spec-helper-platform'
 _ = require 'underscore-plus'
 fstream = require 'fstream'
 fs = require 'fs-plus'
+Grim = require 'grim'
 
 describe "Workspace", ->
   workspace = null
 
   beforeEach ->
-    atom.project.setPaths([atom.project.resolve('dir')])
+    atom.project.setPaths([atom.project.getDirectories()[0]?.resolve('dir')])
     atom.workspace = workspace = new Workspace
 
   describe "::open(uri, options)", ->
@@ -70,19 +72,19 @@ describe "Workspace", ->
 
               expect(openEvents).toEqual [
                 {
-                  uri: atom.project.resolve('a')
+                  uri: atom.project.getDirectories()[0]?.resolve('a')
                   item: editor1
                   pane: atom.workspace.getActivePane()
                   index: 0
                 }
                 {
-                  uri: atom.project.resolve('b')
+                  uri: atom.project.getDirectories()[0]?.resolve('b')
                   item: editor2
                   pane: atom.workspace.getActivePane()
                   index: 1
                 }
                 {
-                  uri: atom.project.resolve('a')
+                  uri: atom.project.getDirectories()[0]?.resolve('a')
                   item: editor1
                   pane: atom.workspace.getActivePane()
                   index: 0
@@ -96,7 +98,7 @@ describe "Workspace", ->
               workspace.open('a').then (o) -> editor = o
 
             runs ->
-              expect(editor.getUri()).toBe atom.project.resolve('a')
+              expect(editor.getURI()).toBe atom.project.getDirectories()[0]?.resolve('a')
               expect(workspace.getActivePaneItem()).toBe editor
               expect(workspace.getActivePane().items).toEqual [editor]
               expect(workspace.getActivePane().activate).toHaveBeenCalled()
@@ -230,7 +232,7 @@ describe "Workspace", ->
         workspace.addOpener(barOpener)
 
         waitsForPromise ->
-          pathToOpen = atom.project.resolve('a.foo')
+          pathToOpen = atom.project.getDirectories()[0]?.resolve('a.foo')
           workspace.open(pathToOpen, hey: "there").then (item) ->
             expect(item).toEqual { foo: pathToOpen, options: {hey: "there"} }
 
@@ -250,6 +252,116 @@ describe "Workspace", ->
       runs ->
         expect(newEditorHandler.argsForCall[0][0].textEditor).toBe editor
 
+    it "records a deprecation warning on the appropriate package if the item has a ::getUri method instead of ::getURI", ->
+      jasmine.snapshotDeprecations()
+
+      waitsForPromise -> atom.packages.activatePackage('package-with-deprecated-pane-item-method')
+
+      waitsForPromise ->
+        atom.workspace.open("test")
+
+      runs ->
+        deprecations = Grim.getDeprecations()
+        expect(deprecations.length).toBe 1
+        expect(deprecations[0].message).toBe "Pane item with class `TestItem` should implement `::getURI` instead of `::getUri`."
+        expect(deprecations[0].getStacks()[0].metadata.packageName).toBe "package-with-deprecated-pane-item-method"
+        jasmine.restoreDeprecationsSnapshot()
+
+    describe "when there is an error opening the file", ->
+      notificationSpy = null
+      beforeEach ->
+        atom.notifications.onDidAddNotification notificationSpy = jasmine.createSpy()
+
+      describe "when a large file is opened", ->
+        beforeEach ->
+          spyOn(fs, 'getSizeSync').andReturn 2 * 1048577 # 2MB
+
+        it "creates a notification", ->
+          waitsForPromise ->
+            workspace.open('file1')
+
+          runs ->
+            expect(notificationSpy).toHaveBeenCalled()
+            notification = notificationSpy.mostRecentCall.args[0]
+            expect(notification.getType()).toBe 'warning'
+            expect(notification.getMessage()).toContain '< 2MB'
+
+      describe "when a file does not exist", ->
+        it "creates an empty buffer for the specified path", ->
+          waitsForPromise ->
+            workspace.open('not-a-file.md')
+
+          runs ->
+            editor = workspace.getActiveTextEditor()
+            expect(notificationSpy).not.toHaveBeenCalled()
+            expect(editor.getPath()).toContain 'not-a-file.md'
+
+      describe "when the user does not have access to the file", ->
+        beforeEach ->
+          spyOn(fs, 'openSync').andCallFake (path) ->
+            error = new Error("EACCES, permission denied '#{path}'")
+            error.path = path
+            error.code = 'EACCES'
+            throw error
+
+        it "creates a notification", ->
+          waitsForPromise ->
+            workspace.open('file1')
+
+          runs ->
+            expect(notificationSpy).toHaveBeenCalled()
+            notification = notificationSpy.mostRecentCall.args[0]
+            expect(notification.getType()).toBe 'warning'
+            expect(notification.getMessage()).toContain 'Permission denied'
+            expect(notification.getMessage()).toContain 'file1'
+
+      describe "when the the operation is not permitted", ->
+        beforeEach ->
+          spyOn(fs, 'openSync').andCallFake (path) ->
+            error = new Error("EPERM, operation not permitted '#{path}'")
+            error.path = path
+            error.code = 'EPERM'
+            throw error
+
+        it "creates a notification", ->
+          waitsForPromise ->
+            workspace.open('file1')
+
+          runs ->
+            expect(notificationSpy).toHaveBeenCalled()
+            notification = notificationSpy.mostRecentCall.args[0]
+            expect(notification.getType()).toBe 'warning'
+            expect(notification.getMessage()).toContain 'Unable to open'
+            expect(notification.getMessage()).toContain 'file1'
+
+      describe "when the the file is already open in windows", ->
+        beforeEach ->
+          spyOn(fs, 'openSync').andCallFake (path) ->
+            error = new Error("EBUSY, resource busy or locked '#{path}'")
+            error.path = path
+            error.code = 'EBUSY'
+            throw error
+
+        it "creates a notification", ->
+          waitsForPromise ->
+            workspace.open('file1')
+
+          runs ->
+            expect(notificationSpy).toHaveBeenCalled()
+            notification = notificationSpy.mostRecentCall.args[0]
+            expect(notification.getType()).toBe 'warning'
+            expect(notification.getMessage()).toContain 'Unable to open'
+            expect(notification.getMessage()).toContain 'file1'
+
+      describe "when there is an unhandled error", ->
+        beforeEach ->
+          spyOn(fs, 'openSync').andCallFake (path) ->
+            throw new Error("I dont even know what is happening right now!!")
+
+        it "creates a notification", ->
+          open = -> workspace.open('file1', workspace.getActivePane())
+          expect(open).toThrow()
+
   describe "::reopenItem()", ->
     it "opens the uri associated with the last closed pane that isn't currently open", ->
       pane = workspace.getActivePane()
@@ -261,21 +373,21 @@ describe "Workspace", ->
 
       runs ->
         # does not reopen items with no uri
-        expect(workspace.getActivePaneItem().getUri()).toBeUndefined()
+        expect(workspace.getActivePaneItem().getURI()).toBeUndefined()
         pane.destroyActiveItem()
 
       waitsForPromise ->
         workspace.reopenItem()
 
       runs ->
-        expect(workspace.getActivePaneItem().getUri()).not.toBeUndefined()
+        expect(workspace.getActivePaneItem().getURI()).not.toBeUndefined()
 
         # destroy all items
-        expect(workspace.getActivePaneItem().getUri()).toBe atom.project.resolve('file1')
+        expect(workspace.getActivePaneItem().getURI()).toBe atom.project.getDirectories()[0]?.resolve('file1')
         pane.destroyActiveItem()
-        expect(workspace.getActivePaneItem().getUri()).toBe atom.project.resolve('b')
+        expect(workspace.getActivePaneItem().getURI()).toBe atom.project.getDirectories()[0]?.resolve('b')
         pane.destroyActiveItem()
-        expect(workspace.getActivePaneItem().getUri()).toBe atom.project.resolve('a')
+        expect(workspace.getActivePaneItem().getURI()).toBe atom.project.getDirectories()[0]?.resolve('a')
         pane.destroyActiveItem()
 
         # reopens items with uris
@@ -285,20 +397,20 @@ describe "Workspace", ->
         workspace.reopenItem()
 
       runs ->
-        expect(workspace.getActivePaneItem().getUri()).toBe atom.project.resolve('a')
+        expect(workspace.getActivePaneItem().getURI()).toBe atom.project.getDirectories()[0]?.resolve('a')
 
       # does not reopen items that are already open
       waitsForPromise ->
         workspace.open('b')
 
       runs ->
-        expect(workspace.getActivePaneItem().getUri()).toBe atom.project.resolve('b')
+        expect(workspace.getActivePaneItem().getURI()).toBe atom.project.getDirectories()[0]?.resolve('b')
 
       waitsForPromise ->
         workspace.reopenItem()
 
       runs ->
-        expect(workspace.getActivePaneItem().getUri()).toBe atom.project.resolve('file1')
+        expect(workspace.getActivePaneItem().getURI()).toBe atom.project.getDirectories()[0]?.resolve('file1')
 
   describe "::increase/decreaseFontSize()", ->
     it "increases/decreases the font size without going below 1", ->
@@ -568,7 +680,7 @@ describe "Workspace", ->
 
         runs ->
           expect(results).toHaveLength(3)
-          expect(results[0].filePath).toBe atom.project.resolve('a')
+          expect(results[0].filePath).toBe atom.project.getDirectories()[0]?.resolve('a')
           expect(results[0].matches).toHaveLength(3)
           expect(results[0].matches[0]).toEqual
             matchText: 'aaa'
@@ -585,7 +697,7 @@ describe "Workspace", ->
           expect(results.length).toBe 1
 
           {filePath, matches} = results[0]
-          expect(filePath).toBe atom.project.resolve('a')
+          expect(filePath).toBe atom.project.getDirectories()[0]?.resolve('a')
           expect(matches).toHaveLength 1
           expect(matches[0]).toEqual
             matchText: '$bill'
@@ -746,10 +858,10 @@ describe "Workspace", ->
     [filePath, commentFilePath, sampleContent, sampleCommentContent] = []
 
     beforeEach ->
-      atom.project.setPaths([atom.project.resolve('../')])
+      atom.project.setPaths([atom.project.getDirectories()[0]?.resolve('../')])
 
-      filePath = atom.project.resolve('sample.js')
-      commentFilePath = atom.project.resolve('sample-with-comments.js')
+      filePath = atom.project.getDirectories()[0]?.resolve('sample.js')
+      commentFilePath = atom.project.getDirectories()[0]?.resolve('sample-with-comments.js')
       sampleContent = fs.readFileSync(filePath).toString()
       sampleCommentContent = fs.readFileSync(commentFilePath).toString()
 
@@ -841,3 +953,79 @@ describe "Workspace", ->
           expect(results[0].replacements).toBe 6
 
           expect(editor.isModified()).toBeTruthy()
+
+  describe "::saveActivePaneItem()", ->
+    describe "when there is an error", ->
+      it "emits a warning notification when the file cannot be saved", ->
+        spyOn(Pane::, 'saveActiveItem').andCallFake ->
+          throw new Error("'/some/file' is a directory")
+
+        atom.notifications.onDidAddNotification addedSpy = jasmine.createSpy()
+        atom.workspace.saveActivePaneItem()
+        expect(addedSpy).toHaveBeenCalled()
+        expect(addedSpy.mostRecentCall.args[0].getType()).toBe 'warning'
+
+      it "emits a warning notification when the directory cannot be written to", ->
+        spyOn(Pane::, 'saveActiveItem').andCallFake ->
+          throw new Error("ENOTDIR, not a directory '/Some/dir/and-a-file.js'")
+
+        atom.notifications.onDidAddNotification addedSpy = jasmine.createSpy()
+        atom.workspace.saveActivePaneItem()
+        expect(addedSpy).toHaveBeenCalled()
+        expect(addedSpy.mostRecentCall.args[0].getType()).toBe 'warning'
+
+      it "emits a warning notification when the user does not have permission", ->
+        spyOn(Pane::, 'saveActiveItem').andCallFake ->
+          error = new Error("EACCES, permission denied '/Some/dir/and-a-file.js'")
+          error.code = 'EACCES'
+          error.path = '/Some/dir/and-a-file.js'
+          throw error
+
+        atom.notifications.onDidAddNotification addedSpy = jasmine.createSpy()
+        atom.workspace.saveActivePaneItem()
+        expect(addedSpy).toHaveBeenCalled()
+        expect(addedSpy.mostRecentCall.args[0].getType()).toBe 'warning'
+
+      it "emits a warning notification when the operation is not permitted", ->
+        spyOn(Pane::, 'saveActiveItem').andCallFake ->
+          error = new Error("EPERM, operation not permitted '/Some/dir/and-a-file.js'")
+          error.code = 'EPERM'
+          error.path = '/Some/dir/and-a-file.js'
+          throw error
+
+      it "emits a warning notification when the file is already open by another app", ->
+        spyOn(Pane::, 'saveActiveItem').andCallFake ->
+          error = new Error("EBUSY, resource busy or locked '/Some/dir/and-a-file.js'")
+          error.code = 'EBUSY'
+          error.path = '/Some/dir/and-a-file.js'
+          throw error
+
+        atom.notifications.onDidAddNotification addedSpy = jasmine.createSpy()
+        atom.workspace.saveActivePaneItem()
+        expect(addedSpy).toHaveBeenCalled()
+
+        notificaiton = addedSpy.mostRecentCall.args[0]
+        expect(notificaiton.getType()).toBe 'warning'
+        expect(notificaiton.getMessage()).toContain 'Unable to save'
+
+      it "emits a warning notification when the file system is read-only", ->
+        spyOn(Pane::, 'saveActiveItem').andCallFake ->
+          error = new Error("EROFS, read-only file system '/Some/dir/and-a-file.js'")
+          error.code = 'EROFS'
+          error.path = '/Some/dir/and-a-file.js'
+          throw error
+
+        atom.notifications.onDidAddNotification addedSpy = jasmine.createSpy()
+        atom.workspace.saveActivePaneItem()
+        expect(addedSpy).toHaveBeenCalled()
+
+        notification = addedSpy.mostRecentCall.args[0]
+        expect(notification.getType()).toBe 'warning'
+        expect(notification.getMessage()).toContain 'Unable to save'
+
+      it "emits a warning notification when the file cannot be saved", ->
+        spyOn(Pane::, 'saveActiveItem').andCallFake ->
+          throw new Error("no one knows")
+
+        save = -> atom.workspace.saveActivePaneItem()
+        expect(save).toThrow()

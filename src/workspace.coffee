@@ -1,11 +1,14 @@
 {deprecate} = require 'grim'
 _ = require 'underscore-plus'
-{join} = require 'path'
+path = require 'path'
+{join} = path
 {Model} = require 'theorist'
 Q = require 'q'
 Serializable = require 'serializable'
 {Emitter, Disposable, CompositeDisposable} = require 'event-kit'
 Grim = require 'grim'
+fs = require 'fs-plus'
+StackTraceParser = require 'stacktrace-parser'
 TextEditor = require './text-editor'
 PaneContainer = require './pane-container'
 Pane = require './pane'
@@ -43,7 +46,7 @@ class Workspace extends Model
   @properties
     paneContainer: null
     fullScreen: false
-    destroyedItemUris: -> []
+    destroyedItemURIs: -> []
 
   constructor: (params) ->
     super
@@ -202,8 +205,7 @@ class Workspace extends Model
   # Essential: Invoke the given callback when the active pane item changes.
   #
   # * `callback` {Function} to be called when the active pane item changes.
-  #   * `event` {Object} with the following keys:
-  #     * `activeItem` The active pane item.
+  #   * `item` The active pane item.
   #
   # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   onDidChangeActivePaneItem: (callback) -> @paneContainer.onDidChangeActivePaneItem(callback)
@@ -383,9 +385,9 @@ class Workspace extends Model
   open: (uri, options={}) ->
     searchAllPanes = options.searchAllPanes
     split = options.split
-    uri = atom.project.resolve(uri)
+    uri = atom.project.resolvePath(uri)
 
-    pane = @paneContainer.paneForUri(uri) if searchAllPanes
+    pane = @paneContainer.paneForURI(uri) if searchAllPanes
     pane ?= switch split
       when 'left'
         @getActivePane().findLeftmostSibling()
@@ -394,7 +396,7 @@ class Workspace extends Model
       else
         @getActivePane()
 
-    @openUriInPane(uri, pane, options)
+    @openURIInPane(uri, pane, options)
 
   # Open Atom's license in the active pane.
   openLicense: ->
@@ -422,9 +424,8 @@ class Workspace extends Model
     {initialLine, initialColumn} = options
     activatePane = options.activatePane ? true
 
-    uri = atom.project.resolve(uri)
-
-    item = @getActivePane().itemForUri(uri)
+    uri = atom.project.resolvePath(uri)
+    item = @getActivePane().itemForURI(uri)
     if uri
       item ?= opener(uri, options) for opener in @getOpeners() when !item
     item ?= atom.project.openSync(uri, {initialLine, initialColumn})
@@ -434,7 +435,7 @@ class Workspace extends Model
     @getActivePane().activate() if activatePane
     item
 
-  openUriInPane: (uri, pane, options={}) ->
+  openURIInPane: (uri, pane, options={}) ->
     # TODO: Remove deprecated changeFocus option
     if options.changeFocus?
       deprecate("The `changeFocus` option has been renamed to `activatePane`")
@@ -444,9 +445,22 @@ class Workspace extends Model
     activatePane = options.activatePane ? true
 
     if uri?
-      item = pane.itemForUri(uri)
-      item ?= opener(atom.project.resolve(uri), options) for opener in @getOpeners() when !item
-    item ?= atom.project.open(uri, options)
+      item = pane.itemForURI(uri)
+      item ?= opener(uri, options) for opener in @getOpeners() when !item
+
+    try
+      item ?= atom.project.open(uri, options)
+    catch error
+      switch error.code
+        when 'EFILETOOLARGE'
+          atom.notifications.addWarning("#{error.message} Large file support is being tracked at [atom/atom#307](https://github.com/atom/atom/issues/307).")
+        when 'EACCES'
+          atom.notifications.addWarning("Permission denied '#{error.path}'")
+        when 'EPERM', 'EBUSY'
+          atom.notifications.addWarning("Unable to open '#{error.path}'", detail: error.message)
+        else
+          throw error
+      return Q()
 
     Q(item)
       .then (item) =>
@@ -468,7 +482,7 @@ class Workspace extends Model
   #
   # Returns a promise that is resolved when the item is opened
   reopenItem: ->
-    if uri = @destroyedItemUris.pop()
+    if uri = @destroyedItemURIs.pop()
       @open(uri)
     else
       Q()
@@ -476,7 +490,7 @@ class Workspace extends Model
   # Deprecated
   reopenItemSync: ->
     deprecate("Use Workspace::reopenItem instead")
-    if uri = @destroyedItemUris.pop()
+    if uri = @destroyedItemURIs.pop()
       @openSync(uri)
 
   # Public: Register an opener for a uri.
@@ -486,7 +500,7 @@ class Workspace extends Model
   # ## Examples
   #
   # ```coffee
-  # atom.project.addOpener (uri) ->
+  # atom.workspace.addOpener (uri) ->
   #   if path.extname(uri) is '.toml'
   #     return new TomlEditor(uri)
   # ```
@@ -496,8 +510,17 @@ class Workspace extends Model
   # Returns a {Disposable} on which `.dispose()` can be called to remove the
   # opener.
   addOpener: (opener) ->
-    @openers.push(opener)
-    new Disposable => _.remove(@openers, opener)
+    packageName = @getCallingPackageName()
+
+    wrappedOpener = (uri, options) ->
+      item = opener(uri, options)
+      if item? and typeof item.getUri is 'function' and typeof item.getURI isnt 'function'
+        Grim.deprecate("Pane item with class `#{item.constructor.name}` should implement `::getURI` instead of `::getUri`.", {packageName})
+      item
+
+    @openers.push(wrappedOpener)
+    new Disposable => _.remove(@openers, wrappedOpener)
+
   registerOpener: (opener) ->
     Grim.deprecate("Call Workspace::addOpener instead")
     @addOpener(opener)
@@ -508,6 +531,34 @@ class Workspace extends Model
 
   getOpeners: ->
     @openers
+
+  getCallingPackageName: ->
+    error = new Error
+    Error.captureStackTrace(error)
+    stack = StackTraceParser.parse(error.stack)
+
+    packagePaths = @getPackagePathsByPackageName()
+
+    for i in [0...stack.length]
+      stackFramePath = stack[i].file
+
+      # Empty when it was run from the dev console
+      return unless stackFramePath
+
+      for packageName, packagePath of packagePaths
+        continue if stackFramePath is 'node.js'
+        relativePath = path.relative(packagePath, stackFramePath)
+        return packageName unless /^\.\./.test(relativePath)
+    return
+
+  getPackagePathsByPackageName: ->
+    packagePathsByPackageName = {}
+    for pack in atom.packages.getLoadedPackages()
+      packagePath = pack.path
+      if packagePath.indexOf('.atom/dev/packages') > -1 or packagePath.indexOf('.atom/packages') > -1
+        packagePath = fs.realpathSync(packagePath)
+      packagePathsByPackageName[pack.name] = packagePath
+    packagePathsByPackageName
 
   ###
   Section: Pane Items
@@ -554,7 +605,7 @@ class Workspace extends Model
   # Save the active pane item.
   #
   # If the active pane item currently has a URI according to the item's
-  # `.getUri` method, calls `.save` on the item. Otherwise
+  # `.getURI` method, calls `.save` on the item. Otherwise
   # {::saveActivePaneItemAs} # will be called instead. This method does nothing
   # if the active item does not implement a `.save` method.
   saveActivePaneItem: ->
@@ -574,8 +625,14 @@ class Workspace extends Model
     catch error
       if error.message.endsWith('is a directory')
         atom.notifications.addWarning("Unable to save file: #{error.message}")
-      else if error.message.startsWith('EACCES,')
-        atom.notifications.addWarning("Unable to save file: #{error.message.replace('EACCES, ', '')}")
+      else if error.code is 'EACCES' and error.path?
+        atom.notifications.addWarning("Unable to save file: Permission denied '#{error.path}'")
+      else if error.code is 'EPERM' and error.path?
+        atom.notifications.addWarning("Unable to save file '#{error.path}'", detail: error.message)
+      else if error.code is 'EBUSY' and error.path?
+        atom.notifications.addWarning("Unable to save file '#{error.path}'", detail: error.message)
+      else if error.code is 'EROFS' and error.path?
+        atom.notifications.addWarning("Unable to save file: Read-only file system '#{error.path}'")
       else if errorMatch = /ENOTDIR, not a directory '([^']+)'/.exec(error.message)
         fileName = errorMatch[1]
         atom.notifications.addWarning("Unable to save file: A directory in the path '#{fileName}' could not be written to")
@@ -618,8 +675,12 @@ class Workspace extends Model
   # * `uri` {String} uri
   #
   # Returns a {Pane} or `undefined` if no pane exists for the given URI.
+  paneForURI: (uri) ->
+    @paneContainer.paneForURI(uri)
+
   paneForUri: (uri) ->
-    @paneContainer.paneForUri(uri)
+    deprecate("Use ::paneForURI instead.")
+    @paneForURI(uri)
 
   # Extended: Get the {Pane} containing the given item.
   #
@@ -652,13 +713,23 @@ class Workspace extends Model
 
   # Removes the item's uri from the list of potential items to reopen.
   itemOpened: (item) ->
-    if uri = item.getUri?()
-      _.remove(@destroyedItemUris, uri)
+    if typeof item.getURI is 'function'
+      uri = item.getURI()
+    else if typeof item.getUri is 'function'
+      uri = item.getUri()
+
+    if uri?
+      _.remove(@destroyedItemURIs, uri)
 
   # Adds the destroyed item's uri to the list of items to reopen.
   didDestroyPaneItem: ({item}) =>
-    if uri = item.getUri?()
-      @destroyedItemUris.push(uri)
+    if typeof item.getURI is 'function'
+      uri = item.getURI()
+    else if typeof item.getUri is 'function'
+      uri = item.getUri()
+
+    if uri?
+      @destroyedItemURIs.push(uri)
 
   # Called by Model superclass when destroyed
   destroyed: ->

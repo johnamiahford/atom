@@ -119,6 +119,7 @@ beforeEach ->
     "package-with-broken-package-json", "package-with-broken-keymap"]
   config.set "editor.useShadowDOM", true
   advanceClock(1000)
+  window.setTimeout.reset()
   config.load.reset()
   config.save.reset()
 
@@ -212,6 +213,11 @@ jasmine.snapshotDeprecations = ->
 jasmine.restoreDeprecationsSnapshot = ->
   Grim.deprecations = deprecationsSnapshot
 
+jasmine.useRealClock = ->
+  jasmine.unspy(window, 'setTimeout')
+  jasmine.unspy(window, 'clearTimeout')
+  jasmine.unspy(_._, 'now')
+
 addCustomMatchers = (spec) ->
   spec.addMatchers
     toBeInstanceOf: (expected) ->
@@ -297,13 +303,13 @@ window.waitsForPromise = (args...) ->
   window.waitsFor timeout, (moveOn) ->
     promise = fn()
     if shouldReject
-      promise.fail(moveOn)
-      promise.done ->
+      promise.catch(moveOn)
+      promise.then ->
         jasmine.getEnv().currentSpec.fail("Expected promise to be rejected, but it was resolved")
         moveOn()
     else
-      promise.done(moveOn)
-      promise.fail (error) ->
+      promise.then(moveOn)
+      promise.catch (error) ->
         jasmine.getEnv().currentSpec.fail("Expected promise to be resolved, but it was rejected with #{jasmine.pp(error)}")
         moveOn()
 

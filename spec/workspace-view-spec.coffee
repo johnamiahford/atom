@@ -3,7 +3,6 @@ Q = require 'q'
 path = require 'path'
 temp = require 'temp'
 TextEditorView = require '../src/text-editor-view'
-Pane = require '../src/pane'
 PaneView = require '../src/pane-view'
 Workspace = require '../src/workspace'
 
@@ -13,8 +12,8 @@ describe "WorkspaceView", ->
   beforeEach ->
     jasmine.snapshotDeprecations()
 
-    atom.project.setPaths([atom.project.resolve('dir')])
-    pathToOpen = atom.project.resolve('a')
+    atom.project.setPaths([atom.project.getDirectories()[0]?.resolve('dir')])
+    pathToOpen = atom.project.getDirectories()[0]?.resolve('a')
     atom.workspace = new Workspace
     atom.workspaceView = atom.views.getView(atom.workspace).__spacePenView
     atom.workspaceView.enableKeymap()
@@ -93,11 +92,11 @@ describe "WorkspaceView", ->
           editorView2 = atom.workspaceView.panes.find('atom-pane-axis.horizontal > atom-pane-axis.vertical > atom-pane atom-text-editor:eq(0)').view()
           editorView4 = atom.workspaceView.panes.find('atom-pane-axis.horizontal > atom-pane-axis.vertical > atom-pane atom-text-editor:eq(1)').view()
 
-          expect(editorView1.getEditor().getPath()).toBe atom.project.resolve('a')
-          expect(editorView2.getEditor().getPath()).toBe atom.project.resolve('b')
-          expect(editorView3.getEditor().getPath()).toBe atom.project.resolve('../sample.js')
+          expect(editorView1.getEditor().getPath()).toBe atom.project.getDirectories()[0]?.resolve('a')
+          expect(editorView2.getEditor().getPath()).toBe atom.project.getDirectories()[0]?.resolve('b')
+          expect(editorView3.getEditor().getPath()).toBe atom.project.getDirectories()[0]?.resolve('../sample.js')
           expect(editorView3.getEditor().getCursorScreenPosition()).toEqual [2, 4]
-          expect(editorView4.getEditor().getPath()).toBe atom.project.resolve('../sample.txt')
+          expect(editorView4.getEditor().getPath()).toBe atom.project.getDirectories()[0]?.resolve('../sample.txt')
           expect(editorView4.getEditor().getCursorScreenPosition()).toEqual [0, 2]
 
           # ensure adjust pane dimensions is called
@@ -295,39 +294,3 @@ describe "WorkspaceView", ->
 
       modalContainer = workspaceElement.querySelector('atom-panel-container.modal')
       expect(modalContainer.parentNode).toBe workspaceElement
-
-  describe "::saveActivePaneItem()", ->
-    describe "when there is an error", ->
-      it "emits a warning notification when the file cannot be saved", ->
-        spyOn(Pane::, 'saveActiveItem').andCallFake ->
-          throw new Error("'/some/file' is a directory")
-
-        atom.notifications.onDidAddNotification addedSpy = jasmine.createSpy()
-        atom.workspace.saveActivePaneItem()
-        expect(addedSpy).toHaveBeenCalled()
-        expect(addedSpy.mostRecentCall.args[0].getType()).toBe 'warning'
-
-      it "emits a warning notification when the directory cannot be written to", ->
-        spyOn(Pane::, 'saveActiveItem').andCallFake ->
-          throw new Error("ENOTDIR, not a directory '/Some/dir/and-a-file.js'")
-
-        atom.notifications.onDidAddNotification addedSpy = jasmine.createSpy()
-        atom.workspace.saveActivePaneItem()
-        expect(addedSpy).toHaveBeenCalled()
-        expect(addedSpy.mostRecentCall.args[0].getType()).toBe 'warning'
-
-      it "emits a warning notification when the user does not have permission", ->
-        spyOn(Pane::, 'saveActiveItem').andCallFake ->
-          throw new Error("EACCES, permission denied '/Some/dir/and-a-file.js'")
-
-        atom.notifications.onDidAddNotification addedSpy = jasmine.createSpy()
-        atom.workspace.saveActivePaneItem()
-        expect(addedSpy).toHaveBeenCalled()
-        expect(addedSpy.mostRecentCall.args[0].getType()).toBe 'warning'
-
-      it "emits a warning notification when the file cannot be saved", ->
-        spyOn(Pane::, 'saveActiveItem').andCallFake ->
-          throw new Error("no one knows")
-
-        save = -> atom.workspace.saveActivePaneItem()
-        expect(save).toThrow()

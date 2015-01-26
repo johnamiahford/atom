@@ -155,6 +155,25 @@ describe "TextEditor", ->
         expect(editor2.getSoftTabs()).toBe true
         expect(editor2.getEncoding()).toBe 'macroman'
 
+    it "uses scoped `core.fileEncoding` values", ->
+      editor1 = null
+      editor2 = null
+
+      atom.config.set('core.fileEncoding', 'utf16le')
+      atom.config.set('core.fileEncoding', 'macroman', scopeSelector: '.js')
+
+      waitsForPromise ->
+        atom.workspace.open('a').then (o) -> editor1 = o
+
+      runs ->
+        expect(editor1.getEncoding()).toBe 'utf16le'
+
+      waitsForPromise ->
+        atom.workspace.open('test.js').then (o) -> editor2 = o
+
+      runs ->
+        expect(editor2.getEncoding()).toBe 'macroman'
+
   describe "title", ->
     describe ".getTitle()", ->
       it "uses the basename of the buffer's path as its title, or 'untitled' if the path is undefined", ->
@@ -943,6 +962,15 @@ describe "TextEditor", ->
         editor.setScrollTop(Infinity)
         editor.undo()
         expect(editor.getScrollTop()).toBe 0
+
+    describe '.logCursorScope()', ->
+      beforeEach ->
+        spyOn(atom.notifications, 'addInfo')
+
+      it 'opens a notification', ->
+        editor.logCursorScope()
+
+        expect(atom.notifications.addInfo).toHaveBeenCalled()
 
   describe "selection", ->
     selection = null
@@ -2621,12 +2649,20 @@ describe "TextEditor", ->
             atom.config.set("editor.autoIndentOnPaste", true)
 
           describe "when only whitespace precedes the cursor", ->
-            it "auto-indents the lines spanned by the pasted text", ->
-              atom.clipboard.write("console.log(x);\nconsole.log(y);\n")
-              editor.setCursorBufferPosition([5, 2])
+            it "auto-indents the lines spanned by the pasted text, based on the first pasted line", ->
+              expect(editor.indentationForBufferRow(5)).toBe(3)
+
+              atom.clipboard.write("a(x);\n  b(x);\n    c(x);\n", indentBasis: 0)
+              editor.setCursorBufferPosition([5, 0])
               editor.pasteText()
-              expect(editor.lineTextForBufferRow(5)).toBe("      console.log(x);")
-              expect(editor.lineTextForBufferRow(6)).toBe("      console.log(y);")
+
+              # Adjust the indentation of the pasted block
+              expect(editor.indentationForBufferRow(5)).toBe(3)
+              expect(editor.indentationForBufferRow(6)).toBe(4)
+              expect(editor.indentationForBufferRow(7)).toBe(5)
+
+              # Preserve the indentation of the next row
+              expect(editor.indentationForBufferRow(8)).toBe(3)
 
           describe "when non-whitespace characters precede the cursor", ->
             it "does not auto-indent the first line being pasted", ->
@@ -2723,9 +2759,9 @@ describe "TextEditor", ->
               editor.setSelectedBufferRange([[1, 2], [1, Infinity]])
               editor.pasteText()
               expect(editor.lineTextForBufferRow(1)).toBe("  if (items.length <= 1) return items;")
-              expect(editor.lineTextForBufferRow(2)).toBe("  ")
+              expect(editor.lineTextForBufferRow(2)).toBe("")
               expect(editor.lineTextForBufferRow(3)).toBe("    if (items.length <= 1) return items;")
-              expect(editor.getCursorBufferPosition()).toEqual([2, 2])
+              expect(editor.getCursorBufferPosition()).toEqual([2, 0])
 
           describe "when there is no selection", ->
             it "pastes the line above the cursor and retains the cursor's column", ->

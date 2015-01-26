@@ -226,14 +226,44 @@ describe "Config", ->
       advanceClock(500)
       expect(atom.config.save.callCount).toBe 1
 
-    describe "when a 'source' and no 'scopeSelector' is given", ->
-      it "removes all scoped settings with the given source", ->
-        atom.config.set("foo.bar.baz", 1, scopeSelector: ".a", source: "source-a")
-        atom.config.set("foo.bar.quux", 2, scopeSelector: ".b", source: "source-a")
-        expect(atom.config.get("foo.bar", scope: [".a.b"])).toEqual(baz: 1, quux: 2)
+    describe "when no 'scopeSelector' is given", ->
+      describe "when a 'source' but no key-path is given", ->
+        it "removes all scoped settings with the given source", ->
+          atom.config.set("foo.bar.baz", 1, scopeSelector: ".a", source: "source-a")
+          atom.config.set("foo.bar.quux", 2, scopeSelector: ".b", source: "source-a")
+          expect(atom.config.get("foo.bar", scope: [".a.b"])).toEqual(baz: 1, quux: 2)
 
-        atom.config.unset(null, source: "source-a")
-        expect(atom.config.get("foo.bar", scope: [".a"])).toEqual(baz: 0, ok: 0)
+          atom.config.unset(null, source: "source-a")
+          expect(atom.config.get("foo.bar", scope: [".a"])).toEqual(baz: 0, ok: 0)
+
+      describe "when a 'source' and a key-path is given", ->
+        it "removes all scoped settings with the given source and key-path", ->
+          atom.config.set("foo.bar.baz", 1)
+          atom.config.set("foo.bar.baz", 2, scopeSelector: ".a", source: "source-a")
+          atom.config.set("foo.bar.baz", 3, scopeSelector: ".a.b", source: "source-b")
+          expect(atom.config.get("foo.bar.baz", scope: [".a.b"])).toEqual(3)
+
+          atom.config.unset("foo.bar.baz", source: "source-b")
+          expect(atom.config.get("foo.bar.baz", scope: [".a.b"])).toEqual(2)
+          expect(atom.config.get("foo.bar.baz")).toEqual(1)
+
+      describe "when no 'source' is given", ->
+        it "removes all scoped and unscoped properties for that key-path", ->
+          atom.config.setDefaults("foo.bar", baz: 100)
+
+          atom.config.set("foo.bar", { baz: 1, ok: 2 }, scopeSelector: ".a")
+          atom.config.set("foo.bar", { baz: 11, ok: 12 }, scopeSelector: ".b")
+          atom.config.set("foo.bar", { baz: 21, ok: 22 })
+
+          atom.config.unset("foo.bar.baz")
+
+          expect(atom.config.get("foo.bar.baz", scope: [".a"])).toBe 100
+          expect(atom.config.get("foo.bar.baz", scope: [".b"])).toBe 100
+          expect(atom.config.get("foo.bar.baz")).toBe 100
+
+          expect(atom.config.get("foo.bar.ok", scope: [".a"])).toBe 2
+          expect(atom.config.get("foo.bar.ok", scope: [".b"])).toBe 12
+          expect(atom.config.get("foo.bar.ok")).toBe 22
 
     describe "when a 'scopeSelector' is given", ->
       it "restores the global default when no scoped default set", ->
@@ -686,15 +716,14 @@ describe "Config", ->
           expect(observeHandler).toHaveBeenCalledWith 'baz'
 
       describe "when the config file contains invalid cson", ->
+        addErrorHandler = null
         beforeEach ->
-          spyOn(console, 'error')
-          spyOn(atom.notifications, 'addError')
+          atom.notifications.onDidAddNotification addErrorHandler = jasmine.createSpy()
           fs.writeFileSync(atom.config.configFilePath, "{{{{{")
 
         it "logs an error to the console and does not overwrite the config file on a subsequent save", ->
           atom.config.loadUserConfig()
-          expect(console.error).toHaveBeenCalled()
-          expect(atom.notifications.addError.callCount).toBe 1
+          expect(addErrorHandler.callCount).toBe 1
           atom.config.set("hair", "blonde") # trigger a save
           expect(atom.config.save).not.toHaveBeenCalled()
 
@@ -876,10 +905,11 @@ describe "Config", ->
             expect(atom.config.get('foo.bar')).toBe 'newVal'
 
       describe "when the config file changes to contain invalid cson", ->
+        addErrorHandler = null
         beforeEach ->
-          spyOn(console, 'error')
+          atom.notifications.onDidAddNotification addErrorHandler = jasmine.createSpy()
           writeConfigFile("}}}")
-          waitsFor "error to be logged", -> console.error.callCount > 0
+          waitsFor "error to be logged", -> addErrorHandler.callCount > 0
 
         it "logs a warning and does not update config data", ->
           expect(updatedHandler.callCount).toBe 0
@@ -1059,6 +1089,9 @@ describe "Config", ->
         expect(atom.config.getSchema('foo.bar.anInt')).toEqual
           type: 'integer'
           default: 12
+
+        expect(atom.config.getSchema('foo.baz')).toBeUndefined()
+        expect(atom.config.getSchema('foo.bar.anInt.baz')).toBeUndefined()
 
       it "respects the schema for scoped settings", ->
         schema =
@@ -1286,6 +1319,87 @@ describe "Config", ->
         it 'converts an array of strings to an array of ints', ->
           atom.config.set 'foo.bar', ['2', '3', '4']
           expect(atom.config.get('foo.bar')).toEqual  [2, 3, 4]
+
+      describe 'when the value has a "color" type', ->
+        beforeEach ->
+          schema =
+            type: 'color'
+            default: 'white'
+          atom.config.setSchema('foo.bar.aColor', schema)
+
+        it 'returns a Color object', ->
+          color = atom.config.get('foo.bar.aColor')
+          expect(color.toHexString()).toBe '#ffffff'
+          expect(color.toRGBAString()).toBe 'rgba(255, 255, 255, 1)'
+
+          color.red = 0
+          color.green = 0
+          color.blue = 0
+          color.alpha = 0
+          atom.config.set('foo.bar.aColor', color)
+
+          color = atom.config.get('foo.bar.aColor')
+          expect(color.toHexString()).toBe '#000000'
+          expect(color.toRGBAString()).toBe 'rgba(0, 0, 0, 0)'
+
+          color.red = 300
+          color.green = -200
+          color.blue = -1
+          color.alpha = 'not see through'
+          atom.config.set('foo.bar.aColor', color)
+
+          color = atom.config.get('foo.bar.aColor')
+          expect(color.toHexString()).toBe '#ff0000'
+          expect(color.toRGBAString()).toBe 'rgba(255, 0, 0, 1)'
+
+        it 'coerces various types to a color object', ->
+          atom.config.set('foo.bar.aColor', 'red')
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 255, green: 0, blue: 0, alpha: 1}
+          atom.config.set('foo.bar.aColor', '#020')
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 0, green: 34, blue: 0, alpha: 1}
+          atom.config.set('foo.bar.aColor', '#abcdef')
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 171, green: 205, blue: 239, alpha: 1}
+          atom.config.set('foo.bar.aColor', 'rgb(1,2,3)')
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 1, green: 2, blue: 3, alpha: 1}
+          atom.config.set('foo.bar.aColor', 'rgba(4,5,6,.7)')
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 4, green: 5, blue: 6, alpha: .7}
+          atom.config.set('foo.bar.aColor', 'hsl(120,100%,50%)')
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 0, green: 255, blue: 0, alpha: 1}
+          atom.config.set('foo.bar.aColor', 'hsla(120,100%,50%,0.3)')
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 0, green: 255, blue: 0, alpha: .3}
+          atom.config.set('foo.bar.aColor', {red: 100, green: 255, blue: 2, alpha: .5})
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 100, green: 255, blue: 2, alpha: .5}
+          atom.config.set('foo.bar.aColor', {red: 255})
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 255, green: 0, blue: 0, alpha: 1}
+          atom.config.set('foo.bar.aColor', {red: 1000})
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 255, green: 0, blue: 0, alpha: 1}
+          atom.config.set('foo.bar.aColor', {red: 'dark'})
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 0, green: 0, blue: 0, alpha: 1}
+
+        it 'reverts back to the default value when undefined is passed to set', ->
+          atom.config.set('foo.bar.aColor', undefined)
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 255, green: 255, blue: 255, alpha: 1}
+
+        it 'will not set non-colors', ->
+          atom.config.set('foo.bar.aColor', null)
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 255, green: 255, blue: 255, alpha: 1}
+
+          atom.config.set('foo.bar.aColor', 'nope')
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 255, green: 255, blue: 255, alpha: 1}
+
+          atom.config.set('foo.bar.aColor', 30)
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 255, green: 255, blue: 255, alpha: 1}
+
+          atom.config.set('foo.bar.aColor', false)
+          expect(atom.config.get('foo.bar.aColor')).toEqual {red: 255, green: 255, blue: 255, alpha: 1}
+
+        it "returns a clone of the Color when returned in a parent object", ->
+          color1 = atom.config.get('foo.bar').aColor
+          color2 = atom.config.get('foo.bar').aColor
+          expect(color1.toRGBAString()).toBe 'rgba(255, 255, 255, 1)'
+          expect(color2.toRGBAString()).toBe 'rgba(255, 255, 255, 1)'
+          expect(color1).not.toBe color2
+          expect(color1).toEqual color2
 
       describe 'when the `enum` key is used', ->
         beforeEach ->

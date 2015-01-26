@@ -8,6 +8,7 @@ async = require 'async'
 pathWatcher = require 'pathwatcher'
 Grim = require 'grim'
 
+Color = require './color'
 ScopedPropertyStore = require 'scoped-property-store'
 ScopeDescriptor = require './scope-descriptor'
 
@@ -214,6 +215,21 @@ ScopeDescriptor = require './scope-descriptor'
 #         type: 'integer'
 #         minimum: 1.5
 #         maximum: 11.5
+# ```
+#
+# #### color
+#
+# Values will be coerced into a {Color} with `red`, `green`, `blue`, and `alpha`
+# properties that all have numeric values. `red`, `green`, `blue` will be in
+# the range 0 to 255 and `value` will be in the range 0 to 1. Values can be any
+# valid CSS color format such as `#abc`, `#abcdef`, `white`,
+# `rgb(50, 100, 150)`, and `rgba(25, 75, 125, .75)`.
+#
+# ```coffee
+# config:
+#   someSetting:
+#     type: 'color'
+#     default: 'white'
 # ```
 #
 # ### Other Supported Keys
@@ -567,6 +583,7 @@ class Config
         Pass a `scopeSelector` in an options hash as the final argument instead.
       """
       [scopeSelector, keyPath, value] = arguments
+      shouldSave = true
     else
       [keyPath, value, options] = arguments
       scopeSelector = options?.scopeSelector
@@ -624,8 +641,9 @@ class Config
         @scopedSettingsStore.removePropertiesForSourceAndSelector(source, scopeSelector)
         @emitChangeEvent()
     else
-      @scopedSettingsStore.removePropertiesForSource(source)
-      if keyPath?
+      for scopeSelector of @scopedSettingsStore.propertiesForSource(source)
+        @unset(keyPath, {scopeSelector, source})
+      if keyPath? and source is @getUserConfigPath()
         @set(keyPath, _.valueForKeyPath(@defaultSettings, keyPath))
 
   # Extended: Get an {Array} of all of the `source` {String}s with which
@@ -687,7 +705,7 @@ class Config
     schema = @schema
     for key in keys
       break unless schema?
-      schema = schema.properties[key]
+      schema = schema.properties?[key]
     schema
 
   # Deprecated: Returns a new {Object} containing all of the global settings and
@@ -816,25 +834,35 @@ class Config
       @configFileHasErrors = false
     catch error
       @configFileHasErrors = true
-      @notifyFailure('Failed to load config.cson', error)
+      message = "Failed to load `#{path.basename(@configFilePath)}`"
+
+      detail = if error.location?
+        # stack is the output from CSON in this case
+        error.stack
+      else
+        # message will be EACCES permission denied, et al
+        error.message
+
+      @notifyFailure(message, detail)
 
   observeUserConfig: ->
     try
       @watchSubscription ?= pathWatcher.watch @configFilePath, (eventType) =>
         @debouncedLoad() if eventType is 'change' and @watchSubscription?
     catch error
-      @notifyFailure('Failed to watch user config', error)
+      @notifyFailure """
+        Unable to watch path: `#{path.basename(@configFilePath)}`. Make sure you have permissions to
+        `#{@configFilePath}`. On linux there are currently problems with watch
+        sizes. See [this document][watches] for more info.
+        [watches]:https://github.com/atom/atom/blob/master/docs/build-instructions/linux.md#typeerror-unable-to-watch-path
+      """
 
   unobserveUserConfig: ->
     @watchSubscription?.close()
     @watchSubscription = null
 
-  notifyFailure: (errorMessage, error) ->
-    message = "#{errorMessage}"
-    detail = error.stack
-    atom.notifications.addError(message, {detail, dismissable: true})
-    console.error message
-    console.error detail
+  notifyFailure: (errorMessage, detail) ->
+    atom.notifications.addError(errorMessage, {detail, dismissable: true})
 
   save: ->
     allSettings = {'*': @settings}
@@ -872,10 +900,10 @@ class Config
       defaultValue = _.valueForKeyPath(@defaultSettings, keyPath)
 
     if value?
-      value = _.deepClone(value)
+      value = @deepClone(value)
       _.defaults(value, defaultValue) if isPlainObject(value) and isPlainObject(defaultValue)
     else
-      value = _.deepClone(defaultValue)
+      value = @deepClone(defaultValue)
 
     value
 
@@ -924,6 +952,16 @@ class Config
         @setRawDefault(keyPath, defaults)
       catch e
         console.warn("'#{keyPath}' could not set the default. Attempted default: #{JSON.stringify(defaults)}; Schema: #{JSON.stringify(@getSchema(keyPath))}")
+
+  deepClone: (object) ->
+    if object instanceof Color
+      object.clone()
+    else if _.isArray(object)
+      object.map (value) => @deepClone(value)
+    else if isPlainObject(object)
+      _.mapObject object, (key, value) => [key, @deepClone(value)]
+    else
+      object
 
   # `schema` will look something like this
   #
@@ -1103,6 +1141,13 @@ Config.addSchemaEnforcers
       else
         value
 
+  'color':
+    coerce: (keyPath, value, schema) ->
+      color = Color.parse(value)
+      unless color?
+        throw new Error("Validation failed at #{keyPath}, #{JSON.stringify(value)} cannot be coerced into a color")
+      color
+
   '*':
     coerceMinimumAndMaximum: (keyPath, value, schema) ->
       return value unless typeof value is 'number'
@@ -1123,7 +1168,7 @@ Config.addSchemaEnforcers
       throw new Error("Validation failed at #{keyPath}, #{JSON.stringify(value)} is not one of #{JSON.stringify(possibleValues)}")
 
 isPlainObject = (value) ->
-  _.isObject(value) and not _.isArray(value) and not _.isFunction(value) and not _.isString(value)
+  _.isObject(value) and not _.isArray(value) and not _.isFunction(value) and not _.isString(value) and not (value instanceof Color)
 
 splitKeyPath = (keyPath) ->
   return [] unless keyPath?

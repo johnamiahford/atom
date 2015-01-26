@@ -12,6 +12,7 @@ atom-text-editor[mini] {
   font-size: @input-font-size;
   line-height: @component-line-height;
   max-height: @component-line-height + 2; // +2 for borders
+  overflow: auto;
 }
 
 atom-overlay {
@@ -155,6 +156,7 @@ atom-text-editor {
   }
 
   .indent-guide {
+    display: inline-block;
     box-shadow: inset 1px 0;
   }
 

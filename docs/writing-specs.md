@@ -127,3 +127,10 @@ describe "when a test is written", ->
     expect("apples").toEqual("apples")
     expect("oranges").not.toEqual("apples")
 ```
+
+### Running on CI
+
+It is now easy to run the specs in a CI environment like Travis and AppVeyor. See the
+[Travis CI For Your Packages](http://blog.atom.io/2014/04/25/ci-for-your-packages.html)
+and [AppVeyor CI For Your Packages](http://blog.atom.io/2014/07/28/windows-ci-for-your-packages.html)
+posts for more details.

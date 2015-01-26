@@ -10,15 +10,20 @@ describe "TextEditorElement", ->
     jasmineContent = document.body.querySelector('#jasmine-content')
 
   describe "instantiation", ->
-    it "honors the mini attribute", ->
+    it "honors the 'mini' attribute", ->
       jasmineContent.innerHTML = "<atom-text-editor mini>"
       element = jasmineContent.firstChild
       expect(element.getModel().isMini()).toBe true
 
-    it "honors the placeholder-text attribute", ->
+    it "honors the 'placeholder-text' attribute", ->
       jasmineContent.innerHTML = "<atom-text-editor placeholder-text='testing'>"
       element = jasmineContent.firstChild
       expect(element.getModel().getPlaceholderText()).toBe 'testing'
+
+    it "honors the 'gutter-hidden' attribute", ->
+      jasmineContent.innerHTML = "<atom-text-editor gutter-hidden>"
+      element = jasmineContent.firstChild
+      expect(element.getModel().isGutterVisible()).toBe false
 
     it "honors the text content", ->
       jasmineContent.innerHTML = "<atom-text-editor>testing</atom-text-editor>"
@@ -97,6 +102,22 @@ describe "TextEditorElement", ->
 
         document.body.focus()
         expect(blurCalled).toBe true
+
+    describe "when focused while a parent node is being attached to the DOM", ->
+      class ElementThatFocusesChild extends HTMLDivElement
+        attachedCallback: ->
+          @firstChild.focus()
+
+      document.registerElement("element-that-focuses-child",
+        prototype: ElementThatFocusesChild.prototype
+      )
+
+      it "proxies the focus event to the hidden input", ->
+        element = new TextEditorElement
+        parentElement = document.createElement("element-that-focuses-child")
+        parentElement.appendChild(element)
+        jasmineContent.appendChild(parentElement)
+        expect(element.shadowRoot.activeElement).toBe element.shadowRoot.querySelector('input')
 
   describe "when the themes finish loading", ->
     [themeReloadCallback, initialThemeLoadComplete, element] = []

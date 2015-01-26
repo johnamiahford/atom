@@ -63,7 +63,8 @@ class TextEditorElement extends HTMLElement
     @buildModel() unless @getModel()?
     @mountComponent() unless @component?.isMounted()
     @component.checkForVisibilityChange()
-    @focus() if @focusOnAttach
+    if this is document.activeElement
+      @focused()
     @emitter.emit("did-attach")
 
   detachedCallback: ->
@@ -99,6 +100,7 @@ class TextEditorElement extends HTMLElement
       tabLength: 2
       softTabs: true
       mini: @hasAttribute('mini')
+      gutterVisible: not @hasAttribute('gutter-hidden')
       placeholderText: @getAttribute('placeholder-text')
     ))
 
@@ -108,7 +110,6 @@ class TextEditorElement extends HTMLElement
       rootElement: @rootElement
       stylesElement: @stylesElement
       editor: @model
-      mini: @model.mini
       lineOverdrawMargin: @lineOverdrawMargin
       useShadowDOM: @useShadowDOM
     )
@@ -128,10 +129,7 @@ class TextEditorElement extends HTMLElement
     @component = null
 
   focused: ->
-    if @component?
-      @component.focused()
-    else
-      @focusOnAttach = true
+    @component?.focused()
 
   blurred: (event) ->
     unless @useShadowDOM
@@ -173,6 +171,38 @@ class TextEditorElement extends HTMLElement
   # Returns a {Number} of pixels.
   getDefaultCharacterWidth: ->
     @getModel().getDefaultCharWidth()
+
+  # Extended: Converts a buffer position to a pixel position.
+  #
+  # * `bufferPosition` An object that represents a buffer position. It can be either
+  #   an {Object} (`{row, column}`), {Array} (`[row, column]`), or {Point}
+  #
+  # Returns an {Object} with two values: `top` and `left`, representing the pixel position.
+  pixelPositionForBufferPosition: (bufferPosition) ->
+    @getModel().pixelPositionForBufferPosition(bufferPosition, true)
+
+  # Extended: Converts a screen position to a pixel position.
+  #
+  # * `screenPosition` An object that represents a screen position. It can be either
+  #   an {Object} (`{row, column}`), {Array} (`[row, column]`), or {Point}
+  #
+  # Returns an {Object} with two values: `top` and `left`, representing the pixel positions.
+  pixelPositionForScreenPosition: (screenPosition) ->
+    @getModel().pixelPositionForScreenPosition(screenPosition, true)
+
+  # Extended: Retrieves the number of the row that is visible and currently at the
+  # top of the editor.
+  #
+  # Returns a {Number}.
+  getFirstVisibleScreenRow: ->
+    @getModel().getFirstVisibleScreenRow(true)
+
+  # Extended: Retrieves the number of the row that is visible and currently at the
+  # bottom of the editor.
+  #
+  # Returns a {Number}.
+  getLastVisibleScreenRow: ->
+    @getModel().getLastVisibleScreenRow(true)
 
   # Extended: call the given `callback` when the editor is attached to the DOM.
   #

@@ -13,16 +13,6 @@ process.on 'uncaughtException', (error={}) ->
   nslog(error.message) if error.message?
   nslog(error.stack) if error.stack?
 
-# Patch fs.statSyncNoException/fs.lstatSyncNoException to fail for non-strings
-# https://github.com/atom/atom-shell/issues/843
-{lstatSyncNoException, statSyncNoException} = fs
-fs.statSyncNoException = (pathToStat) ->
-  return false unless pathToStat and typeof pathToStat is 'string'
-  statSyncNoException(pathToStat)
-fs.lstatSyncNoException = (pathToStat) ->
-  return false unless pathToStat and typeof pathToStat is 'string'
-  lstatSyncNoException(pathToStat)
-
 start = ->
   if process.platform is 'win32'
     SquirrelUpdate = require './squirrel-update'
@@ -50,8 +40,12 @@ start = ->
     app.removeListener 'open-file', addPathToOpen
     app.removeListener 'open-url', addUrlToOpen
 
+    cwd = args.executedFrom?.toString() or process.cwd()
     args.pathsToOpen = args.pathsToOpen.map (pathToOpen) ->
-      path.resolve(args.executedFrom ? process.cwd(), pathToOpen.toString())
+      if cwd
+        path.resolve(cwd, pathToOpen.toString())
+      else
+        path.resolve(pathToOpen.toString())
 
     setupCoffeeScript()
     if args.devMode

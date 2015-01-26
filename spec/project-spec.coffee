@@ -8,7 +8,7 @@ BufferedProcess = require '../src/buffered-process'
 
 describe "Project", ->
   beforeEach ->
-    atom.project.setPaths([atom.project.resolve('dir')])
+    atom.project.setPaths([atom.project.getDirectories()[0]?.resolve('dir')])
 
   describe "serialization", ->
     deserializedProject = null
@@ -37,6 +37,32 @@ describe "Project", ->
         deserializedProject.getBuffers()[0].destroy()
         expect(deserializedProject.getBuffers().length).toBe 0
 
+
+    it "does not deserialize buffers when their path is a directory that exists", ->
+      pathToOpen = path.join(temp.mkdirSync(), 'file.txt')
+
+      waitsForPromise ->
+        atom.project.open(pathToOpen)
+
+      runs ->
+        expect(atom.project.getBuffers().length).toBe 1
+        fs.mkdirSync(pathToOpen)
+        deserializedProject = atom.project.testSerialization()
+        expect(deserializedProject.getBuffers().length).toBe 0
+
+    it "does not deserialize buffers when their path is inaccessible", ->
+      pathToOpen = path.join(temp.mkdirSync(), 'file.txt')
+      fs.writeFileSync(pathToOpen, '')
+
+      waitsForPromise ->
+        atom.project.open(pathToOpen)
+
+      runs ->
+        expect(atom.project.getBuffers().length).toBe 1
+        fs.chmodSync(pathToOpen, '000')
+        deserializedProject = atom.project.testSerialization()
+        expect(deserializedProject.getBuffers().length).toBe 0
+
   describe "when an editor is saved and the project has no path", ->
     it "sets the project's path to the saved file's parent directory", ->
       tempFile = temp.openSync().path
@@ -50,6 +76,29 @@ describe "Project", ->
       runs ->
         editor.saveAs(tempFile)
         expect(atom.project.getPaths()[0]).toBe path.dirname(tempFile)
+
+  describe "when a watch error is thrown from the TextBuffer", ->
+    editor = null
+    beforeEach ->
+      waitsForPromise ->
+        atom.project.open(require.resolve('./fixtures/dir/a')).then (o) -> editor = o
+
+    it "creates a warning notification", ->
+      atom.notifications.onDidAddNotification noteSpy = jasmine.createSpy()
+
+      error = new Error('SomeError')
+      error.eventType = 'resurrect'
+      editor.buffer.emitter.emit 'will-throw-watch-error',
+        handle: jasmine.createSpy()
+        error: error
+
+      expect(noteSpy).toHaveBeenCalled()
+
+      notification = noteSpy.mostRecentCall.args[0]
+      expect(notification.getType()).toBe 'warning'
+      expect(notification.getDetail()).toBe 'SomeError'
+      expect(notification.getMessage()).toContain '`resurrect`'
+      expect(notification.getMessage()).toContain 'fixtures/dir/a'
 
   describe ".open(path)", ->
     [absolutePath, newBufferHandler] = []
@@ -109,7 +158,7 @@ describe "Project", ->
           expect(newBufferHandler).toHaveBeenCalledWith(editor.buffer)
 
     it "returns number of read bytes as progress indicator", ->
-      filePath = atom.project.resolve 'a'
+      filePath = atom.project.getDirectories()[0]?.resolve 'a'
       totalBytes = 0
       promise = atom.project.open(filePath)
       promise.progress (bytesRead) -> totalBytes = bytesRead
@@ -147,27 +196,6 @@ describe "Project", ->
         waitsForPromise ->
           atom.project.bufferForPath("b").then (anotherBuffer) ->
             expect(anotherBuffer).not.toBe buffer
-
-  describe ".resolve(uri)", ->
-    describe "when passed an absolute or relative path", ->
-      it "returns an absolute path based on the atom.project's root", ->
-        absolutePath = require.resolve('./fixtures/dir/a')
-        expect(atom.project.resolve('a')).toBe absolutePath
-        expect(atom.project.resolve(absolutePath + '/../a')).toBe absolutePath
-        expect(atom.project.resolve('a/../a')).toBe absolutePath
-        expect(atom.project.resolve()).toBeUndefined()
-
-    describe "when passed a uri with a scheme", ->
-      it "does not modify uris that begin with a scheme", ->
-        expect(atom.project.resolve('http://zombo.com')).toBe 'http://zombo.com'
-
-    describe "when the project has no path", ->
-      it "returns undefined for relative URIs", ->
-        atom.project.setPaths([])
-        expect(atom.project.resolve('test.txt')).toBeUndefined()
-        expect(atom.project.resolve('http://github.com')).toBe 'http://github.com'
-        absolutePath = fs.absolute(__dirname)
-        expect(atom.project.resolve(absolutePath)).toBe absolutePath
 
   describe ".setPaths(path)", ->
     describe "when path is a file", ->

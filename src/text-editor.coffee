@@ -77,7 +77,7 @@ class TextEditor extends Model
     '$verticalScrollbarWidth', '$horizontalScrollbarHeight', '$scrollTop', '$scrollLeft',
     'manageScrollPosition', toProperty: 'displayBuffer'
 
-  constructor: ({@softTabs, initialLine, initialColumn, tabLength, softWrapped, @displayBuffer, buffer, registerEditor, suppressCursorCreation, @mini, @placeholderText}) ->
+  constructor: ({@softTabs, initialLine, initialColumn, tabLength, softWrapped, @displayBuffer, buffer, registerEditor, suppressCursorCreation, @mini, @placeholderText, @gutterVisible}) ->
     super
 
     @emitter = new Emitter
@@ -104,6 +104,8 @@ class TextEditor extends Model
       @addCursorAtBufferPosition([initialLine, initialColumn])
 
     @languageMode = new LanguageMode(this)
+
+    @setEncoding(atom.config.get('core.fileEncoding', scope: @getRootScopeDescriptor()))
 
     @subscribe @$scrollTop, (scrollTop) =>
       @emit 'scroll-top-changed', scrollTop
@@ -354,7 +356,7 @@ class TextEditor extends Model
   # Immediately calls your callback for each existing cursor.
   #
   # * `callback` {Function}
-  #   * `selection` {Selection} that was added
+  #   * `cursor` {Cursor} that was added
   #
   # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   observeCursors: (callback) ->
@@ -515,7 +517,11 @@ class TextEditor extends Model
   getBuffer: -> @buffer
 
   # Retrieves the current buffer's URI.
-  getUri: -> @buffer.getUri()
+  getURI: -> @buffer.getUri()
+
+  getUri: ->
+    deprecate("Use `::getURI` instead")
+    @getURI()
 
   # Create an {TextEditor} with its initial state based on this object
   copy: ->
@@ -533,8 +539,24 @@ class TextEditor extends Model
     if mini isnt @mini
       @mini = mini
       @updateInvisibles()
+      @emitter.emit 'did-change-mini', @mini
+    @mini
 
   isMini: -> @mini
+
+  onDidChangeMini: (callback) ->
+    @emitter.on 'did-change-mini', callback
+
+  setGutterVisible: (gutterVisible) ->
+    unless gutterVisible is @gutterVisible
+      @gutterVisible = gutterVisible
+      @emitter.emit 'did-change-gutter-visible', @gutterVisible
+    @gutterVisible
+
+  isGutterVisible: -> @gutterVisible ? true
+
+  onDidChangeGutterVisible: (callback) ->
+    @emitter.on 'did-change-gutter-visible', callback
 
   # Set the number of characters that can be displayed horizontally in the
   # editor.
@@ -1262,7 +1284,7 @@ class TextEditor extends Model
   #
   # * `marker` A {Marker} you want this decoration to follow.
   # * `decorationParams` An {Object} representing the decoration e.g.
-  #   `{type: 'gutter', class: 'linter-error'}`
+  #   `{type: 'line-number', class: 'linter-error'}`
   #   * `type` There are a few supported decoration types: `gutter`, `line`,
   #     `highlight`, and `overlay`. The behavior of the types are as follows:
   #     * `gutter` Adds the given `class` to the line numbers overlapping the
@@ -1291,6 +1313,9 @@ class TextEditor extends Model
   #
   # Returns a {Decoration} object
   decorateMarker: (marker, decorationParams) ->
+    if decorationParams.type is 'gutter'
+      deprecate("Decorations of `type: 'gutter'` have been renamed to `type: 'line-number'`.")
+      decorationParams.type = 'line-number'
     @displayBuffer.decorateMarker(marker, decorationParams)
 
   # Public: Get all the decorations within a screen row range.
@@ -1299,7 +1324,7 @@ class TextEditor extends Model
   # * `endScreenRow` the {Number} end screen row (inclusive)
   #
   # Returns an {Object} of decorations in the form
-  #  `{1: [{id: 10, type: 'gutter', class: 'someclass'}], 2: ...}`
+  #  `{1: [{id: 10, type: 'line-number', class: 'someclass'}], 2: ...}`
   #   where the keys are {Marker} IDs, and the values are an array of decoration
   #   params objects attached to the marker.
   # Returns an empty object when no decorations are found
@@ -1324,7 +1349,7 @@ class TextEditor extends Model
   getLineDecorations: (propertyFilter) ->
     @displayBuffer.getLineDecorations(propertyFilter)
 
-  # Extended: Get all decorations of type 'gutter'.
+  # Extended: Get all decorations of type 'line-number'.
   #
   # * `propertyFilter` (optional) An {Object} containing key value pairs that
   #   the returned decorations' properties must match.
@@ -1727,8 +1752,8 @@ class TextEditor extends Model
   addCursor: (marker) ->
     cursor = new Cursor(editor: this, marker: marker)
     @cursors.push(cursor)
-    @decorateMarker(marker, type: 'gutter', class: 'cursor-line')
-    @decorateMarker(marker, type: 'gutter', class: 'cursor-line-no-selection', onlyHead: true, onlyEmpty: true)
+    @decorateMarker(marker, type: 'line-number', class: 'cursor-line')
+    @decorateMarker(marker, type: 'line-number', class: 'cursor-line-no-selection', onlyHead: true, onlyEmpty: true)
     @decorateMarker(marker, type: 'line', class: 'cursor-line', onlyEmpty: true)
     @emit 'cursor-added', cursor
     @emitter.emit 'did-add-cursor', cursor
@@ -2522,7 +2547,11 @@ class TextEditor extends Model
 
   logCursorScope: ->
     scopeDescriptor = @getLastCursor().getScopeDescriptor()
-    console.log scopeDescriptor.scopes, scopeDescriptor
+    list = scopeDescriptor.scopes.toString().split(',')
+    list = list.map (item) -> "* #{item}"
+    content = "Scopes at Cursor\n#{list.join('\n')}"
+
+    atom.notifications.addInfo(content, dismissable: true)
 
   # {Delegates to: DisplayBuffer.tokenForBufferPosition}
   tokenForBufferPosition: (bufferPosition) -> @displayBuffer.tokenForBufferPosition(bufferPosition)
@@ -2861,35 +2890,25 @@ class TextEditor extends Model
     @placeholderText = placeholderText
     @emitter.emit 'did-change-placeholder-text', @placeholderText
 
-  # Extended: Retrieves the number of the row that is visible and currently at the
-  # top of the editor.
-  #
-  # Returns a {Number}.
-  getFirstVisibleScreenRow: ->
+  getFirstVisibleScreenRow: (suppressDeprecation) ->
+    unless suppressDeprecation
+      deprecate("This is now a view method. Call TextEditorElement::getFirstVisibleScreenRow instead.")
     @getVisibleRowRange()[0]
 
-  # Extended: Retrieves the number of the row that is visible and currently at the
-  # bottom of the editor.
-  #
-  # Returns a {Number}.
-  getLastVisibleScreenRow: ->
+  getLastVisibleScreenRow: (suppressDeprecation) ->
+    unless suppressDeprecation
+      deprecate("This is now a view method. Call TextEditorElement::getLastVisibleScreenRow instead.")
     @getVisibleRowRange()[1]
 
-  # Extended: Converts a buffer position to a pixel position.
-  #
-  # * `bufferPosition` An object that represents a buffer position. It can be either
-  #   an {Object} (`{row, column}`), {Array} (`[row, column]`), or {Point}
-  #
-  # Returns an {Object} with two values: `top` and `left`, representing the pixel positions.
-  pixelPositionForBufferPosition: (bufferPosition) -> @displayBuffer.pixelPositionForBufferPosition(bufferPosition)
+  pixelPositionForBufferPosition: (bufferPosition, suppressDeprecation) ->
+    unless suppressDeprecation
+      deprecate("This method is deprecated on the model layer. Use `TextEditorElement::pixelPositionForBufferPosition` instead")
+    @displayBuffer.pixelPositionForBufferPosition(bufferPosition)
 
-  # Extended: Converts a screen position to a pixel position.
-  #
-  # * `screenPosition` An object that represents a screen position. It can be either
-  #   an {Object} (`{row, column}`), {Array} (`[row, column]`), or {Point}
-  #
-  # Returns an {Object} with two values: `top` and `left`, representing the pixel positions.
-  pixelPositionForScreenPosition: (screenPosition) -> @displayBuffer.pixelPositionForScreenPosition(screenPosition)
+  pixelPositionForScreenPosition: (screenPosition, suppressDeprecation) ->
+    unless suppressDeprecation
+      deprecate("This method is deprecated on the model layer. Use `TextEditorElement::pixelPositionForScreenPosition` instead")
+    @displayBuffer.pixelPositionForScreenPosition(screenPosition)
 
   getSelectionMarkerAttributes: ->
     type: 'selection', editorId: @id, invalidate: 'never'

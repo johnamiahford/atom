@@ -15,7 +15,7 @@ my-package/
   menus/
   spec/
   snippets/
-  stylesheets/
+  styles/
   index.coffee
   package.json
 ```
@@ -38,10 +38,10 @@ In addition to the regular [npm package.json keys][npm-keys] available, Atom
 package.json files have their own additions.
 
 - `main` (**Required**): the path to the CoffeeScript file that's the entry point
-to your package
-- `stylesheets` (**Optional**): an Array of Strings identifying the order of the
+to your package.
+- `styles` (**Optional**): an Array of Strings identifying the order of the
 style sheets your package needs to load. If not specified, style sheets in the
-_stylesheets_ directory are added alphabetically.
+_styles_ directory are added alphabetically.
 - `keymaps`(**Optional**): an Array of Strings identifying the order of the
 key mappings your package needs to load. If not specified, mappings in the
 _keymaps_ directory are added alphabetically.
@@ -121,10 +121,10 @@ like you.
 
 ## Style Sheets
 
-Style sheets for your package should be placed in the _stylesheets_ directory.
+Style sheets for your package should be placed in the _styles_ directory.
 Any style sheets in this directory will be loaded and attached to the DOM when
-your package is activated. Style sheets can be written as CSS or [LESS], but
-LESS is recommended.
+your package is activated. Style sheets can be written as CSS or [Less], but
+Less is recommended.
 
 Ideally, you won't need much in the way of styling. We've provided a standard
 set of components which define both the colors and UI elements for any package
@@ -138,7 +138,7 @@ taken from the active theme's [ui-variables.less][ui-variables]. For more
 information, see the [theme variables docs][theme-variables]. If you follow this
 guideline, your package will look good out of the box with any theme!
 
-An optional `stylesheets` array in your _package.json_ can list the style sheets
+An optional `styleSheets` array in your _package.json_ can list the style sheets
 by name to specify a loading order; otherwise, style sheets are loaded
 alphabetically.
 
@@ -418,8 +418,8 @@ all the other available commands.
 [underscore]: http://underscorejs.org/
 [jasmine]: http://jasmine.github.io
 [cson]: https://github.com/atom/season
-[LESS]: http://lesscss.org
-[ui-variables]: https://github.com/atom/atom-dark-ui/blob/master/stylesheets/ui-variables.less
+[Less]: http://lesscss.org
+[ui-variables]: https://github.com/atom/atom-dark-ui/blob/master/styles/ui-variables.less
 [first-package]: your-first-package.html
 [convert-bundle]: converting-a-text-mate-bundle.html
 [convert-theme]: converting-a-text-mate-theme.html

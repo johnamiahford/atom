@@ -41,16 +41,28 @@ class Pane extends Model
 
   # Called by the Serializable mixin during serialization.
   serializeParams: ->
+    if typeof @activeItem?.getURI is 'function'
+      activeItemURI = @activeItem.getURI()
+    else if typeof @activeItem?.getUri is 'function'
+      activeItemURI = @activeItem.getUri()
+
     id: @id
     items: compact(@items.map((item) -> item.serialize?()))
-    activeItemUri: @activeItem?.getUri?()
+    activeItemURI: activeItemURI
     focused: @focused
 
   # Called by the Serializable mixin during deserialization.
   deserializeParams: (params) ->
-    {items, activeItemUri} = params
+    {items, activeItemURI, activeItemUri} = params
+    activeItemURI ?= activeItemUri
     params.items = compact(items.map (itemState) -> atom.deserializers.deserialize(itemState))
-    params.activeItem = find params.items, (item) -> item.getUri?() is activeItemUri
+    params.activeItem = find params.items, (item) ->
+      if typeof item.getURI is 'function'
+        itemURI = item.getURI()
+      else if typeof item.getUri is 'function'
+        itemURI = item.getUri()
+
+      itemURI is activeItemURI
     params
 
   getParent: -> @parent
@@ -426,10 +438,17 @@ class Pane extends Model
     @destroyItem(item) for item in @getItems() when item isnt @activeItem
 
   promptToSaveItem: (item) ->
-    return true unless typeof item.getUri is 'function' and item.shouldPromptToSave?()
+    return true unless item.shouldPromptToSave?()
+
+    if typeof item.getURI is 'function'
+      uri = item.getURI()
+    else if typeof item.getUri is 'function'
+      uri = item.getUri()
+    else
+      return true
 
     chosen = atom.confirm
-      message: "'#{item.getTitle?() ? item.getUri()}' has changes, do you want to save them?"
+      message: "'#{item.getTitle?() ? uri}' has changes, do you want to save them?"
       detailedMessage: "Your changes will be lost if you close this item without saving."
       buttons: ["Save", "Cancel", "Don't Save"]
 
@@ -456,7 +475,12 @@ class Pane extends Model
   # * `nextAction` (optional) {Function} which will be called after the item is
   #   successfully saved.
   saveItem: (item, nextAction) ->
-    if item?.getUri?()
+    if typeof item?.getURI is 'function'
+      itemURI = item.getURI()
+    else if typeof item?.getUri is 'function'
+      itemURI = item.getUri()
+
+    if itemURI?
       item.save?()
       nextAction?()
     else
@@ -485,18 +509,32 @@ class Pane extends Model
   # none exists.
   #
   # * `uri` {String} containing a URI.
+  itemForURI: (uri) ->
+    find @items, (item) ->
+      if typeof item.getURI is 'function'
+        itemUri = item.getURI()
+      else if typeof item.getUri is 'function'
+        itemUri = item.getUri()
+
+      itemUri is uri
+
   itemForUri: (uri) ->
-    find @items, (item) -> item.getUri?() is uri
+    Grim.deprecate("Use `::itemForURI` instead.")
+    @itemForURI(uri)
 
   # Public: Activate the first item that matches the given URI.
   #
   # Returns a {Boolean} indicating whether an item matching the URI was found.
-  activateItemForUri: (uri) ->
-    if item = @itemForUri(uri)
+  activateItemForURI: (uri) ->
+    if item = @itemForURI(uri)
       @activateItem(item)
       true
     else
       false
+
+  activateItemForUri: (uri) ->
+    Grim.deprecate("Use `::activateItemForURI` instead.")
+    @activateItemForURI(uri)
 
   copyActiveItem: ->
     if @activeItem?

@@ -198,6 +198,7 @@ module.exports = (grunt) ->
       outputDir: 'atom-shell'
       downloadDir: atomShellDownloadDir
       rebuild: true  # rebuild native modules after atom-shell is updated
+      token: process.env.ATOM_ACCESS_TOKEN
 
     'create-windows-installer':
       appDirectory: shellAppDir
@@ -205,6 +206,7 @@ module.exports = (grunt) ->
       authors: 'GitHub Inc.'
       loadingGif: path.resolve(__dirname, '..', 'resources', 'win', 'loading.gif')
       iconUrl: 'https://raw.githubusercontent.com/atom/atom/master/resources/win/atom.ico'
+      setupIcon: path.resolve(__dirname, '..', 'resources', 'win', 'atom.ico')
 
     shell:
       'kill-atom':

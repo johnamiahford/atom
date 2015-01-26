@@ -74,7 +74,7 @@ For more information on how to work with Atom's official packages, see
 * Limit the first line to 72 characters or less
 * Reference issues and pull requests liberally
 * Consider starting the commit message with an applicable emoji:
-    * :lipstick: `:lipstick:` when improving the format/structure of the code
+    * :art: `:art:` when improving the format/structure of the code
     * :racehorse: `:racehorse:` when improving performance
     * :non-potable_water: `:non-potable_water:` when plugging memory leaks
     * :memo: `:memo:` when writing docs
@@ -88,6 +88,7 @@ For more information on how to work with Atom's official packages, see
     * :lock: `:lock:` when dealing with security
     * :arrow_up: `:arrow_up:` when upgrading dependencies
     * :arrow_down: `:arrow_down:` when downgrading dependencies
+    * :shirt: `:shirt:` when removing linter warnings
 
 ## CoffeeScript Styleguide
 
@@ -99,6 +100,10 @@ For more information on how to work with Atom's official packages, see
 * Avoid spaces inside the curly-braces of hash literals:
     * `{a: 1, b: 2}` instead of `{ a: 1, b: 2 }`
 * Include a single line of whitespace between methods.
+* Capitalize initialisms and acronyms in names, except for the first word, which
+  should be lower-case:
+  * `getURI` instead of `getUri`
+  * `uriToOpen` instead of `URIToOpen`
 
 ## Documentation Styleguide
 

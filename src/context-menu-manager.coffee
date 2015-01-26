@@ -19,7 +19,7 @@ SpecificityCache = {}
 #
 # ## Context Menu CSON Format
 #
-# # ```coffee
+# ```coffee
 # 'atom-workspace': [{label: 'Help', command: 'application:open-documentation'}]
 # 'atom-text-editor': [{
 #   label: 'History',
@@ -180,9 +180,6 @@ class ContextMenuManager
 
     items
 
-  # Public: Request a context menu to be displayed.
-  #
-  # * `event` A DOM event.
   showForEvent: (event) ->
     @activeElement = event.target
     menuTemplate = @templateForEvent(event)

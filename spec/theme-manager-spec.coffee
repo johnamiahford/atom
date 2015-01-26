@@ -170,7 +170,7 @@ describe "ThemeManager", ->
       themeManager.onDidChangeStylesheets stylesheetsChangedHandler = jasmine.createSpy("stylesheetsChangedHandler")
       themeManager.onDidAddStylesheet stylesheetAddedHandler = jasmine.createSpy("stylesheetAddedHandler")
 
-      cssPath = atom.project.resolve('css.css')
+      cssPath = atom.project.getDirectories()[0]?.resolve('css.css')
       lengthBefore = $('head style').length
 
       themeManager.requireStylesheet(cssPath)
@@ -194,7 +194,7 @@ describe "ThemeManager", ->
       $('head style[id*="css.css"]').remove()
 
     it "synchronously loads and parses less files at the given path and installs a style tag for it in the head", ->
-      lessPath = atom.project.resolve('sample.less')
+      lessPath = atom.project.getDirectories()[0]?.resolve('sample.less')
       lengthBefore = $('head style').length
       themeManager.requireStylesheet(lessPath)
       expect($('head style').length).toBe lengthBefore + 1
@@ -218,9 +218,9 @@ describe "ThemeManager", ->
 
     it "supports requiring css and less stylesheets without an explicit extension", ->
       themeManager.requireStylesheet path.join(__dirname, 'fixtures', 'css')
-      expect($('head style[source-path*="css.css"]').attr('source-path')).toBe themeManager.stringToId(atom.project.resolve('css.css'))
+      expect($('head style[source-path*="css.css"]').attr('source-path')).toBe themeManager.stringToId(atom.project.getDirectories()[0]?.resolve('css.css'))
       themeManager.requireStylesheet path.join(__dirname, 'fixtures', 'sample')
-      expect($('head style[source-path*="sample.less"]').attr('source-path')).toBe themeManager.stringToId(atom.project.resolve('sample.less'))
+      expect($('head style[source-path*="sample.less"]').attr('source-path')).toBe themeManager.stringToId(atom.project.getDirectories()[0]?.resolve('sample.less'))
 
       $('head style[id*="css.css"]').remove()
       $('head style[id*="sample.less"]').remove()
@@ -289,69 +289,104 @@ describe "ThemeManager", ->
           # from within the theme itself
           expect($("atom-text-editor").css("background-color")).toBe "rgb(0, 152, 255)"
 
-
-  describe "when the user stylesheet changes", ->
+  describe "user stylesheet", ->
+    userStylesheetPath = null
     beforeEach ->
-      jasmine.snapshotDeprecations()
-
-    afterEach ->
-      jasmine.restoreDeprecationsSnapshot()
-
-    it "reloads it", ->
-      [styleElementAddedHandler, styleElementRemovedHandler] = []
-      [stylesheetRemovedHandler, stylesheetAddedHandler, stylesheetsChangedHandler] = []
       userStylesheetPath = path.join(temp.mkdirSync("atom"), 'styles.less')
       fs.writeFileSync(userStylesheetPath, 'body {border-style: dotted !important;}')
       spyOn(atom.styles, 'getUserStyleSheetPath').andReturn userStylesheetPath
 
-      waitsForPromise ->
-        themeManager.activateThemes()
+    describe "when the user stylesheet changes", ->
+      beforeEach ->
+        jasmine.snapshotDeprecations()
 
-      runs ->
-        atom.styles.onDidRemoveStyleElement styleElementRemovedHandler = jasmine.createSpy("styleElementRemovedHandler")
-        atom.styles.onDidAddStyleElement styleElementAddedHandler = jasmine.createSpy("styleElementAddedHandler")
+      afterEach ->
+        jasmine.restoreDeprecationsSnapshot()
 
-        themeManager.onDidChangeStylesheets stylesheetsChangedHandler = jasmine.createSpy("stylesheetsChangedHandler")
-        themeManager.onDidRemoveStylesheet stylesheetRemovedHandler = jasmine.createSpy("stylesheetRemovedHandler")
-        themeManager.onDidAddStylesheet stylesheetAddedHandler = jasmine.createSpy("stylesheetAddedHandler")
-        spyOn(themeManager, 'loadUserStylesheet').andCallThrough()
+      it "reloads it", ->
+        [styleElementAddedHandler, styleElementRemovedHandler] = []
+        [stylesheetRemovedHandler, stylesheetAddedHandler, stylesheetsChangedHandler] = []
 
-        expect($(document.body).css('border-style')).toBe 'dotted'
-        fs.writeFileSync(userStylesheetPath, 'body {border-style: dashed}')
+        waitsForPromise ->
+          themeManager.activateThemes()
 
-      waitsFor ->
-        themeManager.loadUserStylesheet.callCount is 1
+        runs ->
+          atom.styles.onDidRemoveStyleElement styleElementRemovedHandler = jasmine.createSpy("styleElementRemovedHandler")
+          atom.styles.onDidAddStyleElement styleElementAddedHandler = jasmine.createSpy("styleElementAddedHandler")
 
-      runs ->
-        expect($(document.body).css('border-style')).toBe 'dashed'
+          themeManager.onDidChangeStylesheets stylesheetsChangedHandler = jasmine.createSpy("stylesheetsChangedHandler")
+          themeManager.onDidRemoveStylesheet stylesheetRemovedHandler = jasmine.createSpy("stylesheetRemovedHandler")
+          themeManager.onDidAddStylesheet stylesheetAddedHandler = jasmine.createSpy("stylesheetAddedHandler")
+          spyOn(themeManager, 'loadUserStylesheet').andCallThrough()
 
-        expect(styleElementRemovedHandler).toHaveBeenCalled()
-        expect(styleElementRemovedHandler.argsForCall[0][0].textContent).toContain 'dotted'
-        expect(stylesheetRemovedHandler).toHaveBeenCalled()
-        expect(stylesheetRemovedHandler.argsForCall[0][0].cssRules[0].style.border).toBe 'dotted'
+          expect($(document.body).css('border-style')).toBe 'dotted'
+          fs.writeFileSync(userStylesheetPath, 'body {border-style: dashed}')
 
-        expect(styleElementAddedHandler).toHaveBeenCalled()
-        expect(styleElementAddedHandler.argsForCall[0][0].textContent).toContain 'dashed'
-        expect(stylesheetAddedHandler).toHaveBeenCalled()
-        expect(stylesheetAddedHandler.argsForCall[0][0].cssRules[0].style.border).toBe 'dashed'
+        waitsFor ->
+          themeManager.loadUserStylesheet.callCount is 1
 
-        expect(stylesheetsChangedHandler).toHaveBeenCalled()
+        runs ->
+          expect($(document.body).css('border-style')).toBe 'dashed'
 
-        styleElementRemovedHandler.reset()
-        stylesheetRemovedHandler.reset()
-        stylesheetsChangedHandler.reset()
-        fs.removeSync(userStylesheetPath)
+          expect(styleElementRemovedHandler).toHaveBeenCalled()
+          expect(styleElementRemovedHandler.argsForCall[0][0].textContent).toContain 'dotted'
+          expect(stylesheetRemovedHandler).toHaveBeenCalled()
+          expect(stylesheetRemovedHandler.argsForCall[0][0].cssRules[0].style.border).toBe 'dotted'
 
-      waitsFor ->
-        themeManager.loadUserStylesheet.callCount is 2
+          expect(styleElementAddedHandler).toHaveBeenCalled()
+          expect(styleElementAddedHandler.argsForCall[0][0].textContent).toContain 'dashed'
+          expect(stylesheetAddedHandler).toHaveBeenCalled()
+          expect(stylesheetAddedHandler.argsForCall[0][0].cssRules[0].style.border).toBe 'dashed'
 
-      runs ->
-        expect(styleElementRemovedHandler).toHaveBeenCalled()
-        expect(styleElementRemovedHandler.argsForCall[0][0].textContent).toContain 'dashed'
-        expect(stylesheetRemovedHandler).toHaveBeenCalled()
-        expect(stylesheetRemovedHandler.argsForCall[0][0].cssRules[0].style.border).toBe 'dashed'
-        expect($(document.body).css('border-style')).toBe 'none'
-        expect(stylesheetsChangedHandler).toHaveBeenCalled()
+          expect(stylesheetsChangedHandler).toHaveBeenCalled()
+
+          styleElementRemovedHandler.reset()
+          stylesheetRemovedHandler.reset()
+          stylesheetsChangedHandler.reset()
+          fs.removeSync(userStylesheetPath)
+
+        waitsFor ->
+          themeManager.loadUserStylesheet.callCount is 2
+
+        runs ->
+          expect(styleElementRemovedHandler).toHaveBeenCalled()
+          expect(styleElementRemovedHandler.argsForCall[0][0].textContent).toContain 'dashed'
+          expect(stylesheetRemovedHandler).toHaveBeenCalled()
+          expect(stylesheetRemovedHandler.argsForCall[0][0].cssRules[0].style.border).toBe 'dashed'
+          expect($(document.body).css('border-style')).toBe 'none'
+          expect(stylesheetsChangedHandler).toHaveBeenCalled()
+
+    describe "when there is an error reading the stylesheet", ->
+      addErrorHandler = null
+      beforeEach ->
+        themeManager.loadUserStylesheet()
+        spyOn(themeManager.lessCache, 'cssForFile').andCallFake ->
+          throw new Error('EACCES permission denied "styles.less"')
+        atom.notifications.onDidAddNotification addErrorHandler = jasmine.createSpy()
+
+      it "creates an error notification", ->
+        themeManager.loadUserStylesheet()
+        expect(addErrorHandler).toHaveBeenCalled()
+        note = addErrorHandler.mostRecentCall.args[0]
+        expect(note.getType()).toBe 'error'
+        expect(note.getMessage()).toContain 'Error loading'
+
+    describe "when there is an error watching the user stylesheet", ->
+      addErrorHandler = null
+      beforeEach ->
+        {File} = require 'pathwatcher'
+        spyOn(File::, 'on').andCallFake (event) ->
+          if event.indexOf('contents-changed') > -1
+            throw new Error('Unable to watch path')
+        spyOn(themeManager, 'loadStylesheet').andReturn ''
+        atom.notifications.onDidAddNotification addErrorHandler = jasmine.createSpy()
+
+      it "creates an error notification", ->
+        themeManager.loadUserStylesheet()
+        expect(addErrorHandler).toHaveBeenCalled()
+        note = addErrorHandler.mostRecentCall.args[0]
+        expect(note.getType()).toBe 'error'
+        expect(note.getMessage()).toContain 'Unable to watch path'
 
   describe "when a non-existent theme is present in the config", ->
     beforeEach ->
@@ -362,7 +397,7 @@ describe "ThemeManager", ->
         themeManager.activateThemes()
 
     it 'uses the default dark UI and syntax themes and logs a warning', ->
-      activeThemeNames = themeManager.getActiveNames()
+      activeThemeNames = themeManager.getActiveThemeNames()
       expect(console.warn.callCount).toBe 2
       expect(activeThemeNames.length).toBe(2)
       expect(activeThemeNames).toContain('atom-dark-ui')
@@ -380,7 +415,7 @@ describe "ThemeManager", ->
           themeManager.activateThemes()
 
       it 'uses the enabled themes', ->
-        activeThemeNames = themeManager.getActiveNames()
+        activeThemeNames = themeManager.getActiveThemeNames()
         expect(activeThemeNames.length).toBe(2)
         expect(activeThemeNames).toContain('atom-light-ui')
         expect(activeThemeNames).toContain('atom-dark-syntax')
@@ -393,7 +428,7 @@ describe "ThemeManager", ->
           themeManager.activateThemes()
 
       it 'uses the default dark UI and syntax themes', ->
-        activeThemeNames = themeManager.getActiveNames()
+        activeThemeNames = themeManager.getActiveThemeNames()
         expect(activeThemeNames.length).toBe(2)
         expect(activeThemeNames).toContain('atom-dark-ui')
         expect(activeThemeNames).toContain('atom-dark-syntax')
@@ -406,7 +441,7 @@ describe "ThemeManager", ->
           themeManager.activateThemes()
 
       it 'uses the default dark UI theme', ->
-        activeThemeNames = themeManager.getActiveNames()
+        activeThemeNames = themeManager.getActiveThemeNames()
         expect(activeThemeNames.length).toBe(2)
         expect(activeThemeNames).toContain('atom-dark-ui')
         expect(activeThemeNames).toContain('atom-light-syntax')
@@ -419,7 +454,7 @@ describe "ThemeManager", ->
           themeManager.activateThemes()
 
       it 'uses the default dark syntax theme', ->
-        activeThemeNames = themeManager.getActiveNames()
+        activeThemeNames = themeManager.getActiveThemeNames()
         expect(activeThemeNames.length).toBe(2)
         expect(activeThemeNames).toContain('atom-light-ui')
         expect(activeThemeNames).toContain('atom-dark-syntax')

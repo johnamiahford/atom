@@ -351,10 +351,15 @@ describe "DisplayBuffer", ->
           expect(displayBuffer.tokenizedLineForScreenRow(1).text).toMatch /^10/
 
       describe "when there is another display buffer pointing to the same buffer", ->
-        it "does not create folds in the other display buffer", ->
+        it "does not consider folds to be nested inside of folds from the other display buffer", ->
           otherDisplayBuffer = new DisplayBuffer({buffer, tabLength})
+          otherDisplayBuffer.createFold(1, 5)
+
           displayBuffer.createFold(2, 4)
           expect(otherDisplayBuffer.foldsStartingAtBufferRow(2).length).toBe 0
+
+          expect(displayBuffer.tokenizedLineForScreenRow(2).text).toBe '2'
+          expect(displayBuffer.tokenizedLineForScreenRow(3).text).toBe '5'
 
     describe "when the buffer changes", ->
       [fold1, fold2] = []
@@ -1058,7 +1063,7 @@ describe "DisplayBuffer", ->
     [marker, decoration, decorationProperties] = []
     beforeEach ->
       marker = displayBuffer.markBufferRange([[2, 13], [3, 15]])
-      decorationProperties = {type: 'gutter', class: 'one'}
+      decorationProperties = {type: 'line-number', class: 'one'}
       decoration = displayBuffer.decorateMarker(marker, decorationProperties)
 
     it "can add decorations associated with markers and remove them", ->
@@ -1079,11 +1084,11 @@ describe "DisplayBuffer", ->
     describe "when a decoration is updated via Decoration::update()", ->
       it "emits an 'updated' event containing the new and old params", ->
         decoration.onDidChangeProperties updatedSpy = jasmine.createSpy()
-        decoration.setProperties type: 'gutter', class: 'two'
+        decoration.setProperties type: 'line-number', class: 'two'
 
         {oldProperties, newProperties} = updatedSpy.mostRecentCall.args[0]
         expect(oldProperties).toEqual decorationProperties
-        expect(newProperties).toEqual type: 'gutter', class: 'two', id: decoration.id
+        expect(newProperties).toEqual type: 'line-number', class: 'two', id: decoration.id
 
     describe "::getDecorations(properties)", ->
       it "returns decorations matching the given optional properties", ->
