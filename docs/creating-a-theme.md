@@ -9,8 +9,8 @@ elements such as the tree view, the tabs, drop-down lists, and the status bar.
 Syntax themes style the code inside the editor.
 
 Themes can be installed and changed from the settings view which you can open
-by selecting the _Atom > Preferences..._ menu and navigating to the _Themes_
-section on the left hand side.
+by selecting the _Atom > Preferences..._ menu and navigating to the _Install_
+section and the _Themes_ section on the left hand side.
 
 ## Getting Started
 
@@ -24,7 +24,8 @@ a few things before starting:
   is used to help distribute your theme to Atom users.
 * Your theme's _package.json_ must contain a `"theme"` key with a value
   of `"ui"` or `"syntax"` for Atom to recognize and load it as a theme.
-* You can find existing themes to install or fork on [atom.io](atomio).
+* You can find existing themes to install or fork on
+  [atom.io][atomio-themes].
 
 ## Creating a Syntax Theme
 
@@ -130,13 +131,13 @@ _styleguide_, or use the shortcut `cmd-ctrl-shift-g`.
 
 ![styleguide-img]
 
-[atomio]: http://atom.io/packages
+[atomio-themes]: https://atom.io/themes
 [Less]: http://lesscss.org/
 [git]: http://git-scm.com/
 [atom]: https://atom.io/
 [package.json]: ./creating-a-package.html#package-json
 [less-tutorial]: https://speakerdeck.com/danmatthews/less-css
-[devtools-tutorial]: https://developers.google.com/chrome-developer-tools/docs/elements
+[devtools-tutorial]: https://developer.chrome.com/devtools/docs/dom-and-styles
 [ui-variables]: ./theme-variables.html
 [livereload]: https://github.com/atom/dev-live-reload
 [styleguide]: https://github.com/atom/styleguide
